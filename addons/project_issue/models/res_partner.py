@@ -1,20 +1,16 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp.osv import fields, osv
+from odoo import fields, models
 
 
-class res_partner(osv.osv):
-    """ Inherits partner and adds Issue information in the partner form """
+class ResPartner(models.Model):
     _inherit = 'res.partner'
 
-    def _issue_count(self, cr, uid, ids, field_name, arg, context=None):
-        Issue = self.pool['project.issue']
-        return {
-            partner_id: Issue.search_count(cr,uid, [('partner_id', '=', partner_id)])
-            for partner_id in ids
-        }
+    issue_count = fields.Integer(compute='_compute_issue_count', string='# Issues')
 
-    _columns = {
-        'issue_count': fields.function(_issue_count, string='# Issues', type='integer'),
-    }
+    def _compute_issue_count(self):
+        issues_data = self.env['project.issue'].read_group([('partner_id', 'in', self.ids)], ['partner_id'], ['partner_id'])
+        result = dict((data['partner_id'][0], data['partner_id_count']) for data in issues_data)
+        for partner in self:
+            partner.issue_count = result.get(partner.id, 0)
