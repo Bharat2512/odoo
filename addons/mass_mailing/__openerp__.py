@@ -27,6 +27,8 @@ professional emails and reuse templates in a few clicks.
         'wizard/mail_compose_message_views.xml',
         'wizard/test_mailing_views.xml',
         'views/mass_mailing_report_views.xml',
+        'views/mass_mailing_stats_views.xml',
+        'views/link_tracker_views.xml',
         'views/mass_mailing_views.xml',
         'views/res_config_views.xml',
         'views/email_template.xml',
