@@ -25,8 +25,8 @@ class MassMailController(MassMailController):
     def unsubscribe(self, mailing_id, opt_in_ids, opt_out_ids, email):
         mailing = request.env['mail.mass_mailing'].sudo().browse(mailing_id)
         if mailing.exists():
-            mailing.update_opt_out(mailing_id, email, opt_in_ids, False)
-            mailing.update_opt_out(mailing_id, email, opt_out_ids, True)
+            mailing.update_opt_out(email, opt_in_ids, False)
+            mailing.update_opt_out(email, opt_out_ids, True)
 
     @http.route('/website_mass_mailing/is_subscriber', type='json', website=True, auth="public")
     def is_subscriber(self, list_id, **post):
