@@ -7,8 +7,6 @@ var base = require('web_editor.base');
 
 var _t = core._t;
 
-base.ready().done(function () {
-
     Tour.register({
         id:   'blog',
         name: _t("Create a blog post"),
@@ -126,6 +124,5 @@ base.ready().done(function () {
             },
         ]
     });
-});
 
 });

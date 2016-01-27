@@ -6,10 +6,8 @@ var Tour = require('web.Tour');
 var base = require('web_editor.base');
 var website = require('website.website');
 
-
 var _t = core._t;
 
-base.ready().done(function () {
     Tour.register({
         id:   'event',
         name: _t("Create an event"),
@@ -86,6 +84,5 @@ base.ready().done(function () {
             },
         ]
     });
-});
 
 });
