@@ -13,6 +13,7 @@ from openerp.exceptions import UserError
 class project_project(osv.osv):
     _inherit = 'project.project'
 
+    # TODO: clean that stuff and make it in a more generic way
     def open_timesheets(self, cr, uid, ids, context=None):
         """ open Timesheets view """
         mod_obj = self.pool.get('ir.model.data')
@@ -20,8 +21,8 @@ class project_project(osv.osv):
 
         project = self.browse(cr, uid, ids[0], context)
         view_context = {
-            'search_default_account_id': [project.analytic_account_id.id],
-            'default_account_id': project.analytic_account_id.id,
+            'search_default_project_id': [project.id],
+            'default_project_id': project.id,
             'default_is_timesheet':True
         }
         help = _("""<p class="oe_view_nocontent_create">Record your timesheets for the project '%s'.</p>""") % (project.name,)
@@ -33,16 +34,6 @@ class project_project(osv.osv):
         result['context'] = view_context
         result['help'] = help
         return result
-
-    def open_contract(self, cr, uid, ids, context=None):
-        """ open Contract view """
-
-        res = self.pool['ir.actions.act_window'].for_xml_id(cr, uid, 'project_timesheet', 'action_project_analytic_account', context=context)
-        contract_ids = self.browse(cr, uid, ids, context=context)
-        account_ids = [x.analytic_account_id.id for x in contract_ids]
-        res['res_id'] = account_ids and account_ids[0] or None
-        return res
-
 
 class task(osv.osv):
     _inherit = "project.task"
@@ -108,11 +99,6 @@ class task(osv.osv):
         'progress': 0,
     }
 
-    def _prepare_delegate_values(self, cr, uid, ids, delegate_data, context=None):
-        vals = super(task, self)._prepare_delegate_values(cr, uid, ids, delegate_data, context)
-        for task in self.browse(cr, uid, ids, context=context):
-            vals[task.id]['planned_hours'] += task.effective_hours
-        return vals
 
     def onchange_project(self, cr, uid, ids, project_id, context=None):
         result = super(task, self).onchange_project(cr, uid, ids, project_id, context=context)
@@ -126,16 +112,10 @@ class task(osv.osv):
 
 class res_partner(osv.osv):
     _inherit = 'res.partner'
-
+#TODO remove; or move
     def unlink(self, cursor, user, ids, context=None):
         parnter_id=self.pool.get('project.project').search(cursor, user, [('partner_id', 'in', ids)])
         if parnter_id:
             raise UserError(_('You cannot delete a partner which is assigned to project, but you can uncheck the active box.'))
         return super(res_partner,self).unlink(cursor, user, ids,
                 context=context)
-
-class account_analytic_line(osv.osv):
-    _inherit = "account.analytic.line"
-    _columns = {
-        'task_id' : fields.many2one('project.task', 'Task'),
-    }
