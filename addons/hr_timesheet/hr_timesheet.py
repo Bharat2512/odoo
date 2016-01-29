@@ -11,7 +11,6 @@ class AccountAnalyticLine(models.Model):
     task_id = fields.Many2one('project.task', 'Task')
     project_id = fields.Many2one('project.project', 'Project')
 
-    # TODO : Maybe not necessary?
     # Constraint: if aal is a timesheet, then project_id is required
     _sql_constraints = [
         ('check_project', "CHECK( (is_timesheet=TRUE AND project_id IS NOT NULL) or (is_timesheet=FALSE) )", 'Timesheets activities must be linked to a project'),
