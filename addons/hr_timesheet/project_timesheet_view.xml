@@ -27,7 +27,7 @@
                 </field>
                 <xpath expr="//notebook/page[@name='description_page']" position="after">
                     <page string="Timesheets">
-                    <field name="timesheet_ids" context="{'default_account_id' : analytic_account_id, 'default_is_timesheet' : 1}">
+                    <field name="timesheet_ids" context="{'default_account_id' : analytic_account_id, 'default_is_timesheet' : 1, 'default_project_id': project_id}">
                         <tree editable="bottom" string="Timesheet Activities" default_order="date">
                             <field name="date"/>
                             <field name="user_id" required="1"/>

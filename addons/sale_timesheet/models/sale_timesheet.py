@@ -27,7 +27,7 @@ class HrEmployee(models.Model):
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
-    track_service = fields.Selection(selection_add=[('timesheet', 'Timesheets on contract')])
+    track_service = fields.Selection(selection_add=[('timesheet', 'Timesheets on project')])
 
     @api.onchange('type', 'invoice_policy')
     def onchange_type_timesheet(self):
@@ -48,7 +48,7 @@ class AccountAnalyticLine(models.Model):
                 sol = self.env['sale.order.line'].browse([result['so_line']])
             else:
                 sol = self.so_line
-            if not sol and self.account_id:
+            if not sol:
                 sol = self.env['sale.order.line'].search([
                     ('order_id.project_id', '=', self.account_id.id),
                     ('state', '=', 'sale'),
@@ -126,6 +126,12 @@ class SaleOrder(models.Model):
                 for line in order.order_line:
                     if line.product_id.track_service == 'timesheet':
                         order._create_analytic_account(prefix=order.product_id.default_code or None)
+                        order.project_id.project_create({'name': order.project_id.name, 'use_tasks': True})
+                        break
+            elif not order.project_id.project_ids:
+                for line in order.order_line:
+                    if line.product_id.track_service == 'timesheet':
+                        order.project_id.project_create({'name': order.project_id.name, 'use_tasks': True})
                         break
         return result
 
