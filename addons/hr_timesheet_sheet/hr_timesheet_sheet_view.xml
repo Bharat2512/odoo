@@ -123,7 +123,8 @@
                             <field context="{'employee_id': employee_id, 'user_id':user_id, 'timesheet_date_from': date_from, 'timesheet_date_to': date_to, 'default_is_timesheet' : 1}" name="timesheet_ids" nolabel="1">
                                 <tree editable="bottom" string="Timesheet Activities">
                                     <field name="date"/>
-                                    <field name="account_id" options="{'no_open': True, 'no_create': True}"/>
+                                    <field name="account_id" options="{'no_open': True, 'no_create': True}" invisible="1"/>
+                                    <field name="project_id"/>
                                     <field name="name"/>
                                     <field name="unit_amount" widget="float_time" string="Hours" sum="Hours"/>
                                     <field invisible="1" name="user_id" required="1"/>
