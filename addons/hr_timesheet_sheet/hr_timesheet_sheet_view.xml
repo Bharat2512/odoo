@@ -132,6 +132,7 @@
                                 </tree>
                                 <form string="Timesheet Activities">
                                     <field name="date"/>
+                                    <field name="project_id"/>
                                     <field name="account_id"/>
                                     <field name="name"/>
                                     <field name="unit_amount" widget="float_time"/>

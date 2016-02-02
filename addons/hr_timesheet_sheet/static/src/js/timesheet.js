@@ -61,6 +61,7 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
         this.res_o2m_drop.add(new Model(this.view.model).call("resolve_2many_commands", 
                 ["timesheet_ids", commands, [], new data.CompoundContext()]))
             .done(function(result) {
+                // TODO : move outside of call
                 self.querying = true;
                 self.set({sheets: result});
                 self.querying = false;
@@ -236,10 +237,10 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
         });
         self.display_totals();
         if(!this.get('effective_readonly')) {
-            this.init_add_account();
+            this.init_add_project();
         }
     },
-    init_add_account: function() {
+    init_add_project: function() {
         if (this.dfm) {
             this.dfm.destroy();
         }
@@ -248,26 +249,26 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
         this.$(".oe_timesheet_weekly_add_row").show();
         this.dfm = new form_common.DefaultFieldManager(this);
         this.dfm.extend_field_desc({
-            account: {
-                relation: "account.analytic.account",
+            project: {
+                relation: "project.project",
             },
         });
         var FieldMany2One = core.form_widget_registry.get('many2one');
-        this.account_m2o = new FieldMany2One(this.dfm, {
+        this.project_m2o = new FieldMany2One(this.dfm, {
             attrs: {
-                name: "account",
+                name: "project",
                 type: "many2one",
                 domain: [
-                    ['id', 'not in', _.pluck(this.accounts, "account")],
+                    ['id', 'not in', _.pluck(this.projects, "project")],
                 ],
                 modifiers: '{"required": true}',
             },
         });
-        this.account_m2o.prependTo(this.$(".o_add_timesheet_line > div")).then(function() {
-            self.account_m2o.$el.addClass('oe_edit_only');
+        this.project_m2o.prependTo(this.$(".o_add_timesheet_line > div")).then(function() {
+            self.project_m2o.$el.addClass('oe_edit_only');
         });
         this.$(".oe_timesheet_button_add").click(function() {
-            var id = self.account_m2o.get_value();
+            var id = self.project_m2o.get_value();
             if (id === false) {
                 self.dfm.set({display_invalid_fields: true});
                 return;
@@ -278,7 +279,7 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
                 name: self.description_line,
                 unit_amount: 0,
                 date: time.date_to_str(self.dates[0]),
-                account_id: id,
+                project_id: id,
             }));
 
             self.set({sheets: ops});
@@ -299,15 +300,15 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
         var self = this;
         var day_tots = _.map(_.range(self.dates.length), function() { return 0; });
         var super_tot = 0;
-        _.each(self.accounts, function(account) {
+        _.each(self.projects, function(project) {
             var acc_tot = 0;
             _.each(_.range(self.dates.length), function(day_count) {
-                var sum = self.sum_box(account, day_count);
+                var sum = self.sum_box(project, day_count);
                 acc_tot += sum;
                 day_tots[day_count] += sum;
                 super_tot += sum;
             });
-            self.$('[data-account-total="' + account.account + '"]').html(self.format_client(acc_tot));
+            self.$('[data-account-total="' + project.project + '"]').html(self.format_client(acc_tot));
         });
         _.each(_.range(self.dates.length), function(day_count) {
             self.$('[data-day-total="' + day_count + '"]').html(self.format_client(day_tots[day_count]));
@@ -330,8 +331,8 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
     generate_o2m_value: function() {
         var ops = [];
         var ignored_fields = this.ignore_fields();
-        _.each(this.accounts, function(account) {
-            _.each(account.days, function(day) {
+        _.each(this.projects, function(project) {
+            _.each(project.days, function(day) {
                 _.each(day.lines, function(line) {
                     if (line.unit_amount !== 0) {
                         var tmp = _.clone(line);
