@@ -46,7 +46,7 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
         var id = JSON.parse($(event.target).data("id"));
         this.do_action({
             type: 'ir.actions.act_window',
-            res_model: "account.analytic.account",
+            res_model: "project.project",
             res_id: id,
             views: [[false, 'form']],
         });
@@ -107,8 +107,8 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
 
         // it's important to use those vars to avoid race conditions
         var dates;
-        var accounts;
-        var account_names;
+        var projects;
+        var project_names;
         var default_get;
         var self = this;
         return this.render_drop.add(new Model("account.analytic.line").call("default_get", [
@@ -125,23 +125,23 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
                 var m_start = moment(start).add(1, 'days');
                 start = m_start.toDate();
             }
-            // group by account
-            accounts = _.chain(self.get("sheets"))
+            // group by project
+            projects = _.chain(self.get("sheets"))
             .map(_.clone)
             .each(function(el) {
                 // much simpler to use only the id in all cases
-                if (typeof(el.account_id) === "object") {
-                    el.account_id = el.account_id[0];
+                if (typeof(el.project_id) === "object") {
+                    el.project_id = el.project_id[0];
                 }
             })
-            .groupBy("account_id").value();
+            .groupBy("project_id").value();
 
-            var account_ids = _.map(_.keys(accounts), function(el) { return el === "false" ? false : Number(el); });
+            var project_ids = _.map(_.keys(projects), function(el) { return el === "false" ? false : Number(el); });
 
-            accounts = _(accounts).chain().map(function(lines, account_id) {
-                var account_defaults = _.extend({}, default_get, (accounts[account_id] || {}).value || {});
+            projects = _(projects).chain().map(function(lines, project_id) {
+                var projects_defaults = _.extend({}, default_get, (projects[project_id] || {}).value || {});
                 // group by days
-                account_id = (account_id === "false")? false : Number(account_id);
+                project_id = (project_id === "false")? false : Number(project_id);
                 var index = _.groupBy(lines, "date");
                 var days = _.map(dates, function(date) {
                     var day = {day: date, lines: index[time.date_to_str(date)] || []};
@@ -151,34 +151,34 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
                         day.lines = _.without(day.lines, to_add);
                         day.lines.unshift(to_add);
                     } else {
-                        day.lines.unshift(_.extend(_.clone(account_defaults), {
+                        day.lines.unshift(_.extend(_.clone(projects_defaults), {
                             name: self.description_line,
                             unit_amount: 0,
                             date: time.date_to_str(date),
-                            account_id: account_id,
+                            project_id: project_id,
                         }));
                     }
                     return day;
                 });
-                return {account: account_id, days: days, account_defaults: account_defaults};
+                return {project: project_id, days: days, projects_defaults: projects_defaults};
             }).value();
 
-            // we need the name_get of the analytic accounts
-            return new Model("account.analytic.account").call("name_get", [_.pluck(accounts, "account"),
+            // we need the name_get of the projects
+            return new Model("project.project").call("name_get", [_.pluck(projects, "project"),
                 new data.CompoundContext()]).then(function(result) {
-                account_names = {};
+                project_names = {};
                 _.each(result, function(el) {
-                    account_names[el[0]] = el[1];
+                    project_names[el[0]] = el[1];
                 });
-                accounts = _.sortBy(accounts, function(el) {
-                    return account_names[el.account];
+                projects = _.sortBy(projects, function(el) {
+                    return project_names[el.project];
                 });
             });
         })).then(function(result) {
             // we put all the gathered data in self, then we render
             self.dates = dates;
-            self.accounts = accounts;
-            self.account_names = account_names;
+            self.projects = projects;
+            self.project_names = project_names;
             self.default_get = default_get;
             //real rendering
             self.display_data();
@@ -206,23 +206,23 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
     display_data: function() {
         var self = this;
         self.$el.html(QWeb.render("hr_timesheet_sheet.WeeklyTimesheet", {widget: self}));
-        _.each(self.accounts, function(account) {
-            _.each(_.range(account.days.length), function(day_count) {
+        _.each(self.projects, function(project) {
+            _.each(_.range(project.days.length), function(day_count) {
                 if (!self.get('effective_readonly')) {
-                    self.get_box(account, day_count).val(self.sum_box(account, day_count, true)).change(function() {
+                    self.get_box(project, day_count).val(self.sum_box(project, day_count, true)).change(function() {
                         var num = $(this).val();
                         if (self.is_valid_value(num) && num !== 0) {
                             num = Number(self.parse_client(num));
                         }
                         if (isNaN(num)) {
-                            $(this).val(self.sum_box(account, day_count, true));
+                            $(this).val(self.sum_box(project, day_count, true));
                         } else {
-                            account.days[day_count].lines[0].unit_amount += num - self.sum_box(account, day_count);
-                            var product = (account.days[day_count].lines[0].product_id instanceof Array) ? account.days[day_count].lines[0].product_id[0] : account.days[day_count].lines[0].product_id;
-                            var journal = (account.days[day_count].lines[0].journal_id instanceof Array) ? account.days[day_count].lines[0].journal_id[0] : account.days[day_count].lines[0].journal_id;
+                            project.days[day_count].lines[0].unit_amount += num - self.sum_box(project, day_count);
+                            var product = (project.days[day_count].lines[0].product_id instanceof Array) ? project.days[day_count].lines[0].product_id[0] : project.days[day_count].lines[0].product_id;
+                            var journal = (project.days[day_count].lines[0].journal_id instanceof Array) ? project.days[day_count].lines[0].journal_id[0] : project.days[day_count].lines[0].journal_id;
 
                             if(!isNaN($(this).val())){
-                                $(this).val(self.sum_box(account, day_count, true));
+                                $(this).val(self.sum_box(project, day_count, true));
                             }
 
                             self.display_totals();
@@ -230,7 +230,7 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
                         }
                     });
                 } else {
-                    self.get_box(account, day_count).html(self.sum_box(account, day_count, true));
+                    self.get_box(project, day_count).html(self.sum_box(project, day_count, true));
                 }
             });
         });
