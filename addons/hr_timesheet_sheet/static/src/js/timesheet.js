@@ -286,12 +286,12 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
             self.destroy_content();
         });
     },
-    get_box: function(account, day_count) {
-        return this.$('[data-account="' + account.account + '"][data-day-count="' + day_count + '"]');
+    get_box: function(project, day_count) {
+        return this.$('[data-project="' + project.project + '"][data-day-count="' + day_count + '"]');
     },
-    sum_box: function(account, day_count, show_value_in_hour) {
+    sum_box: function(project, day_count, show_value_in_hour) {
         var line_total = 0;
-        _.each(account.days[day_count].lines, function(line) {
+        _.each(project.days[day_count].lines, function(line) {
             line_total += line.unit_amount;
         });
         return (show_value_in_hour && line_total !== 0)?this.format_client(line_total):line_total;
@@ -308,7 +308,7 @@ var WeeklyTimesheet = form_common.FormWidget.extend(form_common.ReinitializeWidg
                 day_tots[day_count] += sum;
                 super_tot += sum;
             });
-            self.$('[data-account-total="' + project.project + '"]').html(self.format_client(acc_tot));
+            self.$('[data-project-total="' + project.project + '"]').html(self.format_client(acc_tot));
         });
         _.each(_.range(self.dates.length), function(day_count) {
             self.$('[data-day-total="' + day_count + '"]').html(self.format_client(day_tots[day_count]));
