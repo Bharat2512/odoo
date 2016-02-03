@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+<template id="event_question_assets" inherit_id="website.assets_frontend" name="Events Questions">
+    <xpath expr="/t" position="inside">
+        <script type="text/javascript" src="/website_event_questions/static/src/js/website_event_questions.js"></script>
+    </xpath>
+</template>
+
 <template id="registration_attendee_details_questions" inherit_id="website_event.registration_attendee_details" name="Registration Attendee Details with questions">
     <data>
         <!-- Attendee specific questions -->
         <xpath expr="//t[@name='attendee_loop']" position="inside">
             <t t-if="event.specific_question_ids">
-                <script type="text/javascript" src="/website_event_questions/static/src/js/website_event_questions.js"></script>
                 <div class="mt16">
                     <div t-foreach='event.specific_question_ids' t-as='question'>
                         <div class="row">
