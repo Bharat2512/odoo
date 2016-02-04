@@ -64,6 +64,7 @@
                     <field name="date"/>
                     <field name="user_id"/>
                     <field name="account_id"/>
+                    <field name="project_id"/>
                     <group expand="0" string="Group By">
                         <filter string="Users" domain="[]" context="{'group_by':'user_id'}"/>
                         <filter string="Analytic account" domain="[]" context="{'group_by':'account_id'}"/>

@@ -16,24 +16,14 @@ class project_project(osv.osv):
     # TODO: clean that stuff and make it in a more generic way
     def open_timesheets(self, cr, uid, ids, context=None):
         """ open Timesheets view """
-        mod_obj = self.pool.get('ir.model.data')
-        act_obj = self.pool.get('ir.actions.act_window')
 
-        project = self.browse(cr, uid, ids[0], context)
-        view_context = {
-            'search_default_project_id': [project.id],
-            'default_project_id': project.id,
-            'default_is_timesheet':True
+        action = self.pool.get('ir.model.data').get_object(cr, uid, 'hr_timesheet', 'act_hr_timesheet_line_evry1_all_form', context=context).read()[0]
+        action['context'] = {
+            'default_project_id': ids[0],
+            'default_is_timesheet': True,
         }
-        help = _("""<p class="oe_view_nocontent_create">Record your timesheets for the project '%s'.</p>""") % (project.name,)
-
-        res = mod_obj.get_object_reference(cr, uid, 'hr_timesheet', 'act_hr_timesheet_line_evry1_all_form')
-        id = res and res[1] or False
-        result = act_obj.read(cr, uid, [id], context=context)[0]
-        result['name'] = _('Timesheets')
-        result['context'] = view_context
-        result['help'] = help
-        return result
+        action['domain'] = str([('project_id', 'in', ids)])
+        return action
 
 class task(osv.osv):
     _inherit = "project.task"
