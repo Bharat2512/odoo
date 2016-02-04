@@ -13,7 +13,7 @@ from openerp.exceptions import UserError
 class project_project(osv.osv):
     _inherit = 'project.project'
 
-    # TODO: clean that stuff and make it in a more generic way
+
     def open_timesheets(self, cr, uid, ids, context=None):
         """ open Timesheets view """
 

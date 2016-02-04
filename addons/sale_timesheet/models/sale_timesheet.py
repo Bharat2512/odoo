@@ -99,6 +99,8 @@ class SaleOrder(models.Model):
     timesheet_ids = fields.Many2many('account.analytic.line', compute='_compute_timesheet_ids', string='Timesheet activities associated to this sale')
     timesheet_count = fields.Float(string='Timesheet activities', compute='_compute_timesheet_ids')
 
+    project_project_id = fields.Many2one('project.project', compute='_compute_project_project_id', string='Project associated to this sale')
+
     @api.multi
     @api.depends('project_id.line_ids')
     def _compute_timesheet_ids(self):
@@ -117,6 +119,33 @@ class SaleOrder(models.Model):
                 if count > 1:
                     raise UserError(_("You can use only one product on timesheet within the same sale order. You should split your order to include only one contract based on time and material."))
         return {}
+
+    #TODO
+    @api.multi
+    @api.depends('project_id.project_ids')
+    def _compute_project_project_id(self):
+        for order in self:
+            order.project_project_id = self.env['project.project'].search([('analytic_account_id', '=', order.project_id.id)])
+
+    @api.multi
+    def action_view_project_project(self):
+        self.ensure_one()
+        imd = self.env['ir.model.data']
+        action = imd.xmlid_to_object('project.open_view_project_all')
+        form_view_id = imd.xmlid_to_res_id('project.edit_project')
+
+        result = {
+            'name': action.name,
+            'help': action.help,
+            'type': action.type,
+            'views': [(form_view_id, 'form')],
+            'target': action.target,
+            'context': action.context,
+            'res_model': action.res_model,
+            'res_id': self.project_project_id.id,
+        }
+        return result
+    # END TODO
 
     @api.multi
     def action_confirm(self):
