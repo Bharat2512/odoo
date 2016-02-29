@@ -1120,6 +1120,7 @@ class AssetsBundle(object):
         self.max_css_rules = max_css_rules
         self.javascripts = []
         self.stylesheets = []
+        self.js_templates = []
         self.css_errors = []
         self.remains = []
         self._checksum = None
@@ -1141,6 +1142,7 @@ class AssetsBundle(object):
                 href = el.get('href', '')
                 atype = el.get('type')
                 media = el.get('media')
+
                 if el.tag == 'style':
                     if atype == 'text/sass' or src.endswith('.sass'):
                         self.stylesheets.append(SassStylesheetAsset(self, inline=el.text, media=media))
@@ -1155,6 +1157,8 @@ class AssetsBundle(object):
                         self.stylesheets.append(LessStylesheetAsset(self, url=href, media=media))
                     else:
                         self.stylesheets.append(StylesheetAsset(self, url=href, media=media))
+                elif el.tag == 'link' and el.get('rel') == 'alternate' and atype == 'application/xml':
+                    self.js_templates.append(XMLsheetAsset(self, url=href))
                 elif el.tag == 'script' and not src:
                     self.javascripts.append(JavascriptAsset(self, inline=el.text))
                 elif el.tag == 'script' and self.can_aggregate(src):
@@ -1204,7 +1208,10 @@ class AssetsBundle(object):
             if js and self.javascripts:
                 el = etree.fromstring('<script %s type="text/javascript" src="%s"></script>' % (async and 'async="async"' or '', self.js().url))
                 response.append(self.env['ir.qweb'].render_node(el, qwebcontext))
+        if js and self.js_templates:
+            response.append('<script %s type="text/javascript" src="%s"></script>' % (async and 'async="async"' or '', self.xml().url))
         response.extend(self.remains)
+
         return sep + sep.join(response)
 
     @lazy_property
@@ -1251,13 +1258,13 @@ class AssetsBundle(object):
 
     def get_attachments(self, type, inc=None):
         ira = self.env['ir.attachment']
-        domain = [('url', '=like', '/web/content/%%-%s/%s%s.%s' % (self.version, self.xmlid, ('%%' if inc is None else '.%s' % inc), type))]
+        domain = [('url', '=like', '/web/content/%%-%s/%s%s.%s' % (self.version, self.xmlid, ('' if inc is '' else '%%' if inc is None else '.%s' % inc), type))]
         return ira.sudo().search(domain, order='name asc')
 
     def save_attachment(self, type, content, inc=None):
         ira = self.env['ir.attachment']
 
-        fname = '%s%s.%s' % (self.xmlid, ('' if inc is None else '.%s' % inc), type)
+        fname = '%s%s.%s' % (self.xmlid, ('' if inc is None or inc is '' else '.%s' % inc), type)
         values = {
             'name': "/web/content/%s" % type,
             'datas_fname': fname,
@@ -1288,6 +1295,12 @@ class AssetsBundle(object):
         if not attachments:
             content = ';\n'.join(asset.minify() for asset in self.javascripts)
             return self.save_attachment('js', content)
+        return attachments[0]
+
+    def xml(self, minify=True):
+        if not attachments:
+            content = '\n'.join(asset.to_js() for asset in self.js_templates)
+            return self.save_attachment('xml.js', content, inc=inc)
         return attachments[0]
 
     def css(self):
@@ -1560,6 +1573,36 @@ class JavascriptAsset(WebAsset):
         else:
             return '<script type="text/javascript" charset="utf-8">%s</script>' % self.with_header()
 
+class XMLsheetAsset(WebAsset):
+    def _fetch_content(self):
+        """ Fetch content from file or database"""
+        datas = super(XMLsheetAsset, self)._fetch_content()
+
+    def cleaned_content(self):
+        xml = self.content
+        xml = re.sub(r'[\s\n\r]*</?templates?[^>]*>[\s\n\r]*', '', xml)
+        xml = re.sub(r'[\s\n\r]*<[?]xml[^>]*[?]>[\s\n\r]*', '', xml)
+        xml = re.sub(r'[\s\n\r]*<!--[^>]*-->[\s\n\r]*', '', xml)
+        return xml
+
+    def to_js(self):
+        name = "%s[%s]" % (self.bundle.xmlid, self.url)
+        content = self.cleaned_content()
+        js = [
+            'odoo.define("base.ir.qweb.%s", function (require) {' % name,
+            '"use strict"',
+            'var core = require("web.core");',
+            'var _t = core._t;',
+            'var template = \'<t>\'+',
+        ]
+        js += [line and ("'" + line.replace("\\", "\\\\").replace("'", "\\'") + "\\n'+") or ""
+            for line in content.split('\n')]
+        js += [
+            '\'</t>\';',
+            'core.qweb.add_template(template);',
+            '});'
+        ]
+        return '\n'.join(js)
 
 class StylesheetAsset(WebAsset):
     rx_import = re.compile(r"""@import\s+('|")(?!'|"|/|https?://)""", re.U)
