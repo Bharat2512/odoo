@@ -20,5 +20,4 @@ pads (by default, http://etherpad.com/).
     'installable': True,
     'auto_install': False,
     'web': True,
-    'qweb' : ['static/src/xml/*.xml'],
 }
