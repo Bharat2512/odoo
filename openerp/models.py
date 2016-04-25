@@ -1421,8 +1421,26 @@ class BaseModel(object):
         """
         from openerp.http import request
         Users = self.pool['res.users']
+
+        has_groups = []
+        not_has_groups = []
         for group_ext_id in groups.split(','):
             group_ext_id = group_ext_id.strip()
+            if group_ext_id[0] == '!':
+                not_has_groups.append(group_ext_id[1:])
+            else:
+                has_groups.append(group_ext_id)
+
+        for group_ext_id in not_has_groups:
+            if group_ext_id == 'base.group_no_one':
+                # check: the group_no_one is effective in debug mode only
+                if Users.has_group(cr, uid, group_ext_id) and request and request.debug:
+                    return False
+            else:
+                if Users.has_group(cr, uid, group_ext_id):
+                    return False
+
+        for group_ext_id in has_groups:
             if group_ext_id == 'base.group_no_one':
                 # check: the group_no_one is effective in debug mode only
                 if Users.has_group(cr, uid, group_ext_id) and request and request.debug:
@@ -1430,7 +1448,8 @@ class BaseModel(object):
             else:
                 if Users.has_group(cr, uid, group_ext_id):
                     return True
-        return False
+
+        return not has_groups
 
     def _get_default_form_view(self, cr, user, context=None):
         """ Generates a default single-line form view using all fields
