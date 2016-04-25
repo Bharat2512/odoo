@@ -412,10 +412,17 @@ class AccountBankStatementLine(models.Model):
             move_recs = (move_recs | st_line.journal_entry_ids)
         if move_recs:
             for move in move_recs:
-                move.line_ids.remove_move_reconcile()
-            move_recs.write({'statement_line_id': False})
-            move_recs.button_cancel()
-            move_recs.unlink()
+                if any(line.payment_id for line in move.line_ids):
+                    for line in move.line_ids:
+                        if line.statement_id in self.statement_id:
+                            line.statement_id = False
+                        if line.payment_id and line.payment_id.state == 'reconciled':
+                            line.payment_id.state = 'posted'
+                    move.statement_line_id = False
+                else:
+                    move.line_ids.remove_move_reconcile()
+                    move.button_cancel()
+                    move.unlink()
 
     ####################################################
     # Reconciliation interface methods
