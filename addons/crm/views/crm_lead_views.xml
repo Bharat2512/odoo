@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
-<openerp>
-    <data>
+<odoo>
         <!--
             crm.lead.tag views
         -->
@@ -38,10 +37,8 @@
                 context="{'default_duration': 4.0, 'default_opportunity_id': active_id}"
                 view_type="form"/>
 
-
-        <!-- CRM Lead Form View  -->
-        <record model="ir.ui.view" id="crm_case_form_view_leads">
-        <field name="name">CRM - Leads Form</field>
+        <record id="crm_case_form_view_leads" model="ir.ui.view">
+        <field name="name">crm.lead.form.lead</field>
         <field name="model">crm.lead</field>
         <field name="arch" type="xml">
             <form string="Leads Form">
@@ -137,9 +134,8 @@
         </field>
         </record>
 
-        <!-- CRM Lead Pivot View -->
-        <record model="ir.ui.view" id="crm_case_pivot_view_leads">
-            <field name="name">Opportunities</field>
+        <record id="crm_case_pivot_view_leads" model="ir.ui.view">
+            <field name="name">crm.lead.pivot.lead</field>
             <field name="model">crm.lead</field>
             <field name="arch" type="xml">
                 <pivot string="Opportunities" display_quantity="true">
@@ -149,9 +145,8 @@
             </field>
         </record>
 
-        <!-- CRM Lead Graph View -->
-        <record model="ir.ui.view" id="crm_case_graph_view_leads">
-            <field name="name">Opportunities</field>
+        <record id="crm_case_graph_view_leads" model="ir.ui.view">
+            <field name="name">crm.lead.graph.lead</field>
             <field name="model">crm.lead</field>
             <field name="arch" type="xml">
                 <graph string="Opportunities" type="bar">
@@ -161,9 +156,8 @@
             </field>
         </record>
 
-        <!-- CRM Lead Tree View -->
-        <record model="ir.ui.view" id="crm_case_tree_view_leads">
-            <field name="name">Leads</field>
+        <record id="crm_case_tree_view_leads" model="ir.ui.view">
+            <field name="name">crm.lead.tree.lead</field>
             <field name="model">crm.lead</field>
             <field name="arch" type="xml">
                 <tree string="Leads" decoration-bf="message_needaction==True" decoration-muted="probability == 100">
@@ -189,24 +183,20 @@
             </field>
         </record>
 
-
-        <!-- CRM Lead Calendar View -->
         <record model="ir.ui.view" id="crm_case_calendar_view_leads">
-            <field name="name">CRM - Leads Calendar</field>
+            <field name="name">crm.lead.calendar.lead</field>
             <field name="model">crm.lead</field>
             <field name="priority" eval="2"/>
             <field name="arch" type="xml">
-                <calendar string="Leads Generation"
-                    date_start="date_action" color="user_id">
+                <calendar string="Leads Generation" date_start="date_action" color="user_id">
                     <field name="name"/>
                     <field name="partner_name"/>
                 </calendar>
             </field>
         </record>
 
-    <!-- CRM Lead Kanban View  -->
-        <record model="ir.ui.view" id="crm_case_kanban_view_leads">
-            <field name="name">CRM - Leads Kanban</field>
+        <record id="crm_case_kanban_view_leads" model="ir.ui.view">
+            <field name="name">crm.lead.kanban.lead</field>
             <field name="model">crm.lead</field>
             <field name="arch" type="xml">
                 <kanban default_group_by="stage_id" class="o_kanban_small_column">
@@ -281,9 +271,8 @@
             </field>
         </record>
 
-        <!-- CRM Lead Search View -->
         <record id="view_crm_case_leads_filter" model="ir.ui.view">
-            <field name="name">CRM - Leads Search</field>
+            <field name="name">crm.lead.search.lead</field>
             <field name="model">crm.lead</field>
             <field name="arch" type="xml">
                 <search string="Search Leads">
@@ -326,9 +315,8 @@
         <!--
             crm.lead (as Opportunity) views
         -->
-        <!-- Opportunities Form View -->
-        <record model="ir.ui.view" id="crm_case_form_view_oppor">
-            <field name="name">Opportunities</field>
+        <record id="crm_case_form_view_oppor" model="ir.ui.view">
+            <field name="name">crm.lead.form.opportunity</field>
             <field name="model">crm.lead</field>
             <field name="priority">20</field>
             <field name="arch" type="xml">
@@ -489,9 +477,8 @@
             </field>
         </record>
 
-        <!-- Opportunities Tree View -->
-        <record model="ir.ui.view" id="crm_case_tree_view_oppor">
-            <field name="name">Opportunities Tree</field>
+        <record id="crm_case_tree_view_oppor" model="ir.ui.view">
+            <field name="name">crm.lead.tree.opportunity</field>
             <field name="model">crm.lead</field>
             <field name="arch" type="xml">
                 <tree string="Opportunities" decoration-bf="message_needaction==True" decoration-muted="probability == 100" decoration-danger="date_action and (date_action &lt; current_date)">
@@ -536,9 +523,8 @@
             </field>
         </record>
 
-        <!-- Opportunities Search View -->
         <record id="view_crm_case_opportunities_filter" model="ir.ui.view">
-            <field name="name">CRM - Opportunities Search</field>
+            <field name="name">crm.lead.search.opportunity</field>
             <field name="model">crm.lead</field>
             <field name="arch" type="xml">
                 <search string="Search Opportunities">
@@ -668,7 +654,11 @@
         <!--
             Menu Actions
         -->
-        <menuitem id="base.menu_sales" name="Sales" parent="base.menu_base_partner" sequence="5"/>
+        <menuitem
+            id="base.menu_sales"
+            name="Sales"
+            parent="sales_team.menu_base_partner"
+            sequence="5"/>
 
         <!-- Lead Menu -->
         <record model="ir.actions.act_window" id="crm_lead_all_leads">
@@ -698,8 +688,13 @@
             </field>
         </record>
 
-        <menuitem name="Leads" id="menu_crm_leads" parent="base.menu_sales" sequence="1"
-            action="crm_lead_all_leads" groups="crm.group_use_lead"/>
+        <menuitem
+            id="menu_crm_leads"
+            name="Leads"
+            parent="base.menu_sales"
+            sequence="1"
+            action="crm_lead_all_leads"
+            groups="crm.group_use_lead"/>
 
         <!-- 'My Pipeline' menu : Server action, act_window_views and act_windows -->
         <record model="ir.actions.act_window" id="crm_lead_opportunities">
@@ -777,7 +772,11 @@
             </field>
         </record>
 
-        <menuitem id="menu_crm_opportunities" action="action_your_pipeline" parent="base.menu_sales" sequence="4"/>
+        <menuitem
+            id="menu_crm_opportunities"
+            action="action_your_pipeline"
+            parent="base.menu_sales"
+            sequence="4"/>
 
         <!-- Next Activities Menu -->
         <record id="crm_lead_action_activities" model="ir.actions.act_window">
@@ -805,8 +804,12 @@
             </field>
         </record>
 
-        <menuitem id="crm_lead_menu_activities" name="Next Activities" sequence="5"
-            parent="base.menu_sales" action="crm_lead_action_activities" />
+        <menuitem
+            id="crm_lead_menu_activities"
+            name="Next Activities"
+            parent="base.menu_sales"
+            sequence="5"
+            action="crm_lead_action_activities" />
 
         <!-- Configuration/Lead & Opporotunities/Lead Tags Menu -->
         <record id="crm_lead_tag_action" model="ir.actions.act_window">
@@ -826,9 +829,13 @@
             </field>
         </record>
 
-        <menuitem action="crm_lead_tag_action"
-            id="menu_crm_lead_categ" name="Lead Tags"
-            parent="base.menu_crm_config_lead" sequence="1" groups="base.group_no_one"/>
+        <menuitem
+            id="menu_crm_lead_categ"
+            name="Lead Tags"
+            action="crm_lead_tag_action"
+            parent="sales_team.menu_crm_config_lead"
+            sequence="1"
+            groups="base.group_no_one"/>
 
         <!-- Configuration/Lead & Opporotunities/Lost Reasons Menu -->
         <record id="crm_lost_reason_action" model="ir.actions.act_window">
@@ -847,7 +854,11 @@
             </field>
         </record>
 
-        <menuitem action="crm_lost_reason_action" id="menu_crm_lost_reason" parent="base.menu_crm_config_lead" sequence="6" groups="base.group_no_one"/>
+        <menuitem
+            id="menu_crm_lost_reason"
+            action="crm_lost_reason_action"
+            parent="sales_team.menu_crm_config_lead"
+            sequence="6"
+            groups="base.group_no_one"/>
 
-    </data>
-</openerp>
+</odoo>

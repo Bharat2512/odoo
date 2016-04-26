@@ -16,6 +16,7 @@ from openerp.tools.translate import _
 from openerp.tools import email_re, email_split
 from openerp.exceptions import UserError, AccessError
 
+
 _logger = logging.getLogger(__name__)
 
 CRM_LEAD_FIELDS_TO_MERGE = ['name',
