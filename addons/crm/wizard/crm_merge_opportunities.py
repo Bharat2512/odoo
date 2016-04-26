@@ -36,9 +36,9 @@ class crm_merge_opportunity(osv.osv_memory):
         merge_result = lead_obj.browse(cr, uid, merge_id, context=context)
 
         if merge_result.type == 'opportunity':
-            return lead_obj.redirect_opportunity_view(cr, uid, merge_id, context=context)
+            return lead_obj.redirect_opportunity_view(cr, uid, [merge_id], context=context)
         else:
-            return lead_obj.redirect_lead_view(cr, uid, merge_id, context=context)
+            return lead_obj.redirect_lead_view(cr, uid, [merge_id], context=context)
 
     def default_get(self, cr, uid, fields, context=None):
         """

@@ -30,7 +30,7 @@ class crm_lead(osv.osv):
     def assign_salesman_of_assigned_partner(self, cr, uid, ids, context=None):
         salesmans_leads = {}
         for lead in self.browse(cr, uid, ids, context=context):
-            if (lead.stage_id.probability > 0 and lead.stage_id.probability < 100) or lead.stage_id.sequence == 1: 
+            if (lead.stage_id.probability > 0 and lead.stage_id.probability < 100) or lead.stage_id.sequence == 1:
                 if lead.partner_assigned_id and lead.partner_assigned_id.user_id and lead.partner_assigned_id.user_id != lead.user_id:
                     salesman_id = lead.partner_assigned_id.user_id.id
                     if salesmans_leads.get(salesman_id):
@@ -38,7 +38,8 @@ class crm_lead(osv.osv):
                     else:
                         salesmans_leads[salesman_id] = [lead.id]
         for salesman_id, lead_ids in salesmans_leads.items():
-            salesteam_id = self.on_change_user(cr, uid, lead_ids, salesman_id, context=None)['value'].get('team_id')
+            salesteam = self._onchange_user_values(cr, uid, lead_ids, salesman_id, context=None).get('team_id')
+            salesteam_id = salesteam.id if salesteam else False
             self.write(cr, uid, lead_ids, {'user_id': salesman_id, 'team_id': salesteam_id}, context=context)
 
     def set_tag_assign(self, cr, uid, ids, assign, context=None):
