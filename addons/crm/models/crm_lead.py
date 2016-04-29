@@ -806,10 +806,11 @@ class Lead(FormatAddress, models.Model):
                 partner_ids[lead.id] = lead.partner_id.id
             if action == 'create':
                 partner = lead._create_lead_partner()
+                partner_id = partner.id
                 partner.write({'team_id': lead.team_id.id if lead.team_id else False})
-            if partner:
-                lead.write({'partner_id': partner.id})
-            partner_ids[lead.id] = partner.id
+            if partner_id:
+                lead.write({'partner_id': partner_id})
+            partner_ids[lead.id] = partner_id
         return partner_ids
 
     @api.multi

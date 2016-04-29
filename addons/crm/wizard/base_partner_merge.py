@@ -16,11 +16,15 @@ from openerp.tools import mute_logger
 from .validate_email import validate_email
 
 import openerp
-from openerp.osv import osv, orm
-from openerp.osv import fields
+from openerp.osv import osv
 from openerp.osv.orm import browse_record
 from openerp.tools.translate import _
 from openerp.exceptions import UserError
+
+import odoo
+from odoo import api, fields, models
+from odoo import SUPERUSER_ID
+
 
 pattern = re.compile("&(\w+?);")
 
@@ -58,28 +62,17 @@ def is_integer_list(ids):
     return all(isinstance(i, (int, long)) for i in ids)
 
 
-class ResPartner(osv.Model):
-    _inherit = 'res.partner'
+class MergePartnerLine(models.TransientModel):
 
-    _columns = {
-        'id': fields.integer('Id', readonly=True),
-        'create_date': fields.datetime('Create Date', readonly=True),
-    }
-
-class MergePartnerLine(osv.TransientModel):
     _name = 'base.partner.merge.line'
-
-    _columns = {
-        'wizard_id': fields.many2one('base.partner.merge.automatic.wizard',
-                                     'Wizard'),
-        'min_id': fields.integer('MinID'),
-        'aggr_ids': fields.char('Ids', required=True),
-    }
-
     _order = 'min_id asc'
 
+    wizard_id = fields.Many2one('base.partner.merge.automatic.wizard', 'Wizard')
+    min_id = fields.Integer('MinID')
+    aggr_ids = fields.Char('Ids', required=True)
 
-class MergePartnerAutomatic(osv.TransientModel):
+
+class MergePartnerAutomatic(models.TransientModel):
     """
         The idea behind this wizard is to create a list of potential partners to
         merge. We use two objects, the first one is the wizard for the end-user.
@@ -87,86 +80,92 @@ class MergePartnerAutomatic(osv.TransientModel):
     """
     _name = 'base.partner.merge.automatic.wizard'
 
-    _columns = {
-        # Group by
-        'group_by_email': fields.boolean('Email'),
-        'group_by_name': fields.boolean('Name'),
-        'group_by_is_company': fields.boolean('Is Company'),
-        'group_by_vat': fields.boolean('VAT'),
-        'group_by_parent_id': fields.boolean('Parent Company'),
-
-        'state': fields.selection([('option', 'Option'),
-                                   ('selection', 'Selection'),
-                                   ('finished', 'Finished')],
-                                  'State',
-                                  readonly=True,
-                                  required=True),
-        'number_group': fields.integer("Group of Contacts", readonly=True),
-        'current_line_id': fields.many2one('base.partner.merge.line', 'Current Line'),
-        'line_ids': fields.one2many('base.partner.merge.line', 'wizard_id', 'Lines'),
-        'partner_ids': fields.many2many('res.partner', string='Contacts'),
-        'dst_partner_id': fields.many2one('res.partner', string='Destination Contact'),
-
-        'exclude_contact': fields.boolean('A user associated to the contact'),
-        'exclude_journal_item': fields.boolean('Journal Items associated to the contact'),
-        'maximum_group': fields.integer("Maximum of Group of Contacts"),
-    }
-
-    def default_get(self, cr, uid, fields, context=None):
-        if context is None:
-            context = {}
-        res = super(MergePartnerAutomatic, self).default_get(cr, uid, fields, context)
-        if context.get('active_model') == 'res.partner' and context.get('active_ids'):
-            partner_ids = context['active_ids']
+    @api.model
+    def default_get(self, fields):
+        res = super(MergePartnerAutomatic, self).default_get(fields)
+        active_ids = self.env.context.get('active_ids')
+        if self.env.context.get('active_model') == 'res.partner' and active_ids:
             res['state'] = 'selection'
-            res['partner_ids'] = partner_ids
-            res['dst_partner_id'] = self._get_ordered_partner(cr, uid, partner_ids, context=context)[-1].id
+            res['partner_ids'] = active_ids
+            res['dst_partner_id'] = self._get_ordered_partner(active_ids)[-1].id
         return res
 
-    _defaults = {
-        'state': 'option'
-    }
+    # Group by
+    group_by_email = fields.Boolean('Email')
+    group_by_name = fields.Boolean('Name')
+    group_by_is_company = fields.Boolean('Is Company')
+    group_by_vat = fields.Boolean('VAT')
+    group_by_parent_id = fields.Boolean('Parent Company')
 
-    def get_fk_on(self, cr, table):
-        q = """  SELECT cl1.relname as table,
-                        att1.attname as column
-                   FROM pg_constraint as con, pg_class as cl1, pg_class as cl2,
-                        pg_attribute as att1, pg_attribute as att2
-                  WHERE con.conrelid = cl1.oid
-                    AND con.confrelid = cl2.oid
-                    AND array_lower(con.conkey, 1) = 1
-                    AND con.conkey[1] = att1.attnum
-                    AND att1.attrelid = cl1.oid
-                    AND cl2.relname = %s
-                    AND att2.attname = 'id'
-                    AND array_lower(con.confkey, 1) = 1
-                    AND con.confkey[1] = att2.attnum
-                    AND att2.attrelid = cl2.oid
-                    AND con.contype = 'f'
+    state = fields.Selection([
+        ('option', 'Option'),
+        ('selection', 'Selection'),
+        ('finished', 'Finished')
+    ], readonly=True, required=True, string='State', default='option')
+
+    number_group = fields.Integer('Group of Contacts', readonly=True)
+    current_line_id = fields.Many2one('base.partner.merge.line', string='Current Line')
+    line_ids = fields.One2many('base.partner.merge.line', 'wizard_id', string='Lines')
+    partner_ids = fields.Many2many('res.partner', string='Contacts')
+    dst_partner_id = fields.Many2one('res.partner', string='Destination Contact')
+
+    exclude_contact = fields.Boolean('A user associated to the contact')
+    exclude_journal_item = fields.Boolean('Journal Items associated to the contact')
+    maximum_group = fields.Integer('Maximum of Group of Contacts')
+
+
+    # ----------------------------------------
+    # Update method. Core methods to merge steps
+    # ----------------------------------------
+
+    def _get_fk_on(self, table):
+        """ return a list of many2one relation with the given table.
+            :param table : the name of the sql table to return relations
+            :returns a list of tuple 'table name', 'column name'.
         """
-        return cr.execute(q, (table,))
+        query = """
+            SELECT cl1.relname as table, att1.attname as column
+            FROM pg_constraint as con, pg_class as cl1, pg_class as cl2, pg_attribute as att1, pg_attribute as att2
+            WHERE con.conrelid = cl1.oid
+                AND con.confrelid = cl2.oid
+                AND array_lower(con.conkey, 1) = 1
+                AND con.conkey[1] = att1.attnum
+                AND att1.attrelid = cl1.oid
+                AND cl2.relname = %s
+                AND att2.attname = 'id'
+                AND array_lower(con.confkey, 1) = 1
+                AND con.confkey[1] = att2.attnum
+                AND att2.attrelid = cl2.oid
+                AND con.contype = 'f'
+        """
+        self._cr.execute(query, (table,))
+        return self._cr.fetchall()
 
-    def _update_foreign_keys(self, cr, uid, src_partners, dst_partner, context=None):
-        _logger.debug('_update_foreign_keys for dst_partner: %s for src_partners: %r', dst_partner.id, list(map(operator.attrgetter('id'), src_partners)))
+    @api.model
+    def _update_foreign_keys(self, src_partners, dst_partner):
+        """ Update all foreign key for the src_partner
+            :param src_partners : merge source res.partner recordset (does not include destination one)
+            :param dst_partner : record of destination res.partner
+        """
+        _logger.debug('_update_foreign_keys for dst_partner: %s for src_partners: %r', dst_partner.id, src_partners.ids)
 
         # find the many2one relation to a partner
-        proxy = self.pool.get('res.partner')
-        self.get_fk_on(cr, 'res_partner')
+        Partner = self.env['res.partner']
+        relations = self._get_fk_on('res_partner')
 
-        # ignore two tables
-
-        for table, column in cr.fetchall():
-            if 'base_partner_merge_' in table:
+        for table, column in relations:
+            if 'base_partner_merge_' in table:  # ignore two tables
                 continue
-            partner_ids = tuple(map(int, src_partners))
 
+            # get list of columns of current table (exept the current fk column)
             query = "SELECT column_name FROM information_schema.columns WHERE table_name LIKE '%s'" % (table)
-            cr.execute(query, ())
+            self._cr.execute(query, ())
             columns = []
-            for data in cr.fetchall():
+            for data in self._cr.fetchall():
                 if data[0] != column:
                     columns.append(data[0])
 
+            # do the update for the current table/column in SQL
             query_dic = {
                 'table': table,
                 'column': column,
@@ -186,15 +185,16 @@ class MergePartnerAutomatic(osv.TransientModel):
                                 %(column)s = %%s AND
                                 ___tu.%(value)s = ___tw.%(value)s
                         )""" % query_dic
-                for partner_id in partner_ids:
-                    cr.execute(query, (dst_partner.id, partner_id, dst_partner.id))
+                for partner in src_partners:
+                    self._cr.execute(query, (dst_partner.id, partner.id, dst_partner.id))
             else:
                 try:
-                    with mute_logger('openerp.sql_db'), cr.savepoint():
+                    with mute_logger('openerp.sql_db'), self._cr.savepoint():
                         query = 'UPDATE "%(table)s" SET %(column)s = %%s WHERE %(column)s IN %%s' % query_dic
-                        cr.execute(query, (dst_partner.id, partner_ids,))
+                        self._cr.execute(query, (dst_partner.id, tuple(src_partners.ids),))
 
-                        if column == proxy._parent_name and table == 'res_partner':
+                        # handle the recursivity with parent relation
+                        if column == Partner._parent_name and table == 'res_partner':
                             query = """
                                 WITH RECURSIVE cycle(id, parent_id) AS (
                                         SELECT id, parent_id FROM res_partner
@@ -206,12 +206,12 @@ class MergePartnerAutomatic(osv.TransientModel):
                                 )
                                 SELECT id FROM cycle WHERE id = parent_id AND id = %s
                             """
-                            cr.execute(query, (dst_partner.id,))
+                            self._cr.execute(query, (dst_partner.id,))
                 except psycopg2.Error:
                     # updating fails, most likely due to a violated unique constraint
                     # keeping record with nonexistent partner_id is useless, better delete it
                     query = 'DELETE FROM %(table)s WHERE %(column)s IN %%s' % query_dic
-                    cr.execute(query, (partner_ids,))
+                    self._cr.execute(query, (tuple(src_partners.ids),))
 
     def _update_reference_fields(self, cr, uid, src_partners, dst_partner, context=None):
         _logger.debug('_update_reference_fields for dst_partner: %s for src_partners: %r', dst_partner.id, list(map(operator.attrgetter('id'), src_partners)))
@@ -252,7 +252,7 @@ class MergePartnerAutomatic(osv.TransientModel):
                 # unknown model or field => skip
                 continue
 
-            if isinstance(column, fields.function):
+            if isinstance(column, openerp.fields.function):
                 continue
 
             for partner in src_partners:
@@ -265,76 +265,98 @@ class MergePartnerAutomatic(osv.TransientModel):
                 }
                 proxy_model.write(cr, openerp.SUPERUSER_ID, model_ids, values, context=context)
 
-    def _update_values(self, cr, uid, src_partners, dst_partner, context=None):
-        _logger.debug('_update_values for dst_partner: %s for src_partners: %r', dst_partner.id, list(map(operator.attrgetter('id'), src_partners)))
+    @api.model
+    def _update_values(self, src_partners, dst_partner):
+        """ Update values of dst_partner with the ones from the src_partners.
+            :param src_partners : recordset of source res.partner
+            :param dst_partner : record of destination res.partner
+        """
+        _logger.debug('_update_values for dst_partner: %s for src_partners: %r', dst_partner.id, src_partners.ids)
 
-        columns = dst_partner._columns
-        def write_serializer(column, item):
+        model_fields = dst_partner._fields
+
+        def write_serializer(item):
             if isinstance(item, browse_record):
                 return item.id
             else:
                 return item
-
+        # get all fields that are not computed or x2many
         values = dict()
-        for column, field in columns.iteritems():
-            if field._type not in ('many2many', 'one2many') and not isinstance(field, fields.function):
+        for column, field in model_fields.iteritems():
+            if field.type not in ('many2many', 'one2many') and field.compute is None:
                 for item in itertools.chain(src_partners, [dst_partner]):
                     if item[column]:
-                        values[column] = write_serializer(column, item[column])
-
+                        values[column] = write_serializer(item[column])
+        # remove fields that can not be updated (id and parent_id)
         values.pop('id', None)
         parent_id = values.pop('parent_id', None)
         dst_partner.write(values)
+        # try to update the parent_id
         if parent_id and parent_id != dst_partner.id:
             try:
                 dst_partner.write({'parent_id': parent_id})
             except ValidationError:
                 _logger.info('Skip recursive partner hierarchies for parent_id %s of partner: %s', parent_id, dst_partner.id)
 
+    @api.model
     @mute_logger('openerp.osv.expression', 'openerp.models')
-    def _merge(self, cr, uid, partner_ids, dst_partner=None, context=None):
-        proxy = self.pool.get('res.partner')
+    def _merge(self, partner_ids, dst_partner=None):
+        """ private implementation of merge partner
+            :param partner_ids : ids of partner to merge
+            :param dst_partner : record of destination res.partner
+        """
+        proxy = self.env['res.partner']
+        Partner = self.env['res.partner']
 
-        partner_ids = proxy.exists(cr, uid, list(partner_ids), context=context)
-        if len(partner_ids) < 2:
+        partner_ids = []
+        partners = Partner.browse(partner_ids).exists()
+
+        if len(partners) < 2:
             return
 
-        if len(partner_ids) > 3:
+        if len(partners) > 3:
             raise UserError(_("For safety reasons, you cannot merge more than 3 contacts together. You can re-open the wizard several times if needed."))
 
+        # check if the list of partners to merge contains child/parent relation
         child_ids = set()
-        for partner_id in partner_ids:
-            child_ids = child_ids.union(set(proxy.search(cr, uid, [('id', 'child_of', [partner_id])])) - set([partner_id]))
+        for partner_id in partners.ids:
+            child_ids = child_ids.union(set(Partner.search([('id', 'child_of', [partner_id])]).ids) - set([partner_id]))
         if set(partner_ids).intersection(child_ids):
             raise UserError(_("You cannot merge a contact with one of his parent."))
 
-        if openerp.SUPERUSER_ID != uid and len(set(partner.email for partner in proxy.browse(cr, uid, partner_ids, context=context))) > 1:
+        # check only admin can merge partners with different emails
+        if SUPERUSER_ID != self._uid and len(set(partners.mapped('email'))) > 1:
             raise UserError(_("All contacts must have the same email. Only the Administrator can merge contacts with different emails."))
 
-        if dst_partner and dst_partner.id in partner_ids:
-            src_partners = proxy.browse(cr, uid, [id for id in partner_ids if id != dst_partner.id], context=context)
-        else:
-            ordered_partners = self._get_ordered_partner(cr, uid, partner_ids, context)
+        # remove dst_partner from partners to merge
+        if dst_partner and dst_partner in partners:
+            src_partners = partners - dst_partner
+        else:  # if no dst_partner take the last one
+            ordered_partners = self._get_ordered_partner(partners.ids)
             dst_partner = ordered_partners[-1]
             src_partners = ordered_partners[:-1]
         _logger.info("dst_partner: %s", dst_partner.id)
 
-        if openerp.SUPERUSER_ID != uid and self._model_is_installed(cr, uid, 'account.move.line', context=context) and \
-                self.pool.get('account.move.line').search(cr, openerp.SUPERUSER_ID, [('partner_id', 'in', [partner.id for partner in src_partners])], context=context):
+        # FIXME : is it still required to make and exception for account.move.line since accounting v9.0 ?
+        if SUPERUSER_ID != self._uid and self._model_is_installed('account.move.line') and self.env['account.move.line'].sudo().search([('partner_id', 'in', src_partners.ids)]):
             raise UserError(_("Only the destination contact may be linked to existing Journal Items. Please ask the Administrator if you need to merge several contacts linked to existing Journal Items."))
 
-        call_it = lambda function: function(cr, uid, src_partners, dst_partner,
-                                            context=context)
+        # call sub methods to do the merge
+        self._update_foreign_keys(src_partners, dst_partner)
+        self._update_reference_fields(src_partners, dst_partner)
+        self._update_values(src_partners, dst_partner)
 
-        call_it(self._update_foreign_keys)
-        call_it(self._update_reference_fields)
-        call_it(self._update_values)
 
         _logger.info('(uid = %s) merged the partners %r with %s', uid, list(map(operator.attrgetter('id'), src_partners)), dst_partner.id)
         dst_partner.message_post(body='%s %s'%(_("Merged with the following partners:"), ", ".join('%s<%s>(ID %s)' % (p.name, p.email or 'n/a', p.id) for p in src_partners)))
 
         for partner in src_partners:
             partner.unlink()
+
+
+
+
+
 
     def clean_emails(self, cr, uid, context=None):
         """
@@ -464,11 +486,13 @@ class MergePartnerAutomatic(osv.TransientModel):
             this.current_line_id.unlink()
         return self._next_screen(cr, uid, this, context)
 
-    def _get_ordered_partner(self, cr, uid, partner_ids, context=None):
-        partners = self.pool.get('res.partner').browse(cr, uid, list(partner_ids), context=context)
-        ordered_partners = sorted(sorted(partners,
-                            key=operator.attrgetter('create_date'), reverse=True),
-                                key=operator.attrgetter('active'), reverse=True)
+    @api.model
+    def _get_ordered_partner(self, partner_ids):
+        """ returns a `res.partner` recordset ordered by create_date/active fields
+            :param partner_ids : list of partner ids to sort
+        """
+        partners = self.env['res.partner'].browse(partner_ids)
+        ordered_partners = sorted(sorted(partners, key=operator.attrgetter('create_date'), reverse=True), key=operator.attrgetter('active'), reverse=True)
         return ordered_partners
 
     def _next_screen(self, cr, uid, this, context=None):
@@ -501,10 +525,10 @@ class MergePartnerAutomatic(osv.TransientModel):
             'target': 'new',
         }
 
-    def _model_is_installed(self, cr, uid, model, context=None):
-        proxy = self.pool.get('ir.model')
-        domain = [('model', '=', model)]
-        return proxy.search_count(cr, uid, domain, context=context) > 0
+    # TODO JEM : can't it be more effecient than making a sql search ?
+    @api.model
+    def _model_is_installed(self, model):
+        return self.env['ir.model'].search_count([('model', '=', model)]) > 0
 
     def _partner_use_in(self, cr, uid, aggr_ids, models, context=None):
         """
