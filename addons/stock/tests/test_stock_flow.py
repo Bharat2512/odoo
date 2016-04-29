@@ -1168,6 +1168,31 @@ class TestStockFlow(TestStockCommon):
         total_qty = sum([quant.qty for quant in quants])
         self.assertEqual(total_qty, 0, 'Expecting 0 units lot of lotproduct, but we got %.4f on location stock!' % (total_qty))
 
+        # check product available of saleable category in stock location
+        category_id = self.ref('product.product_category_5')
+        inventory3 = self.InvObj.create({
+                                    'name': 'Test Category',
+                                    'filter': 'category',
+                                    'location_id': self.stock_location,
+                                    'category_id': category_id
+                                })
+        # Start Inventory
+        inventory3.prepare_inventory()
+        # check all products have given category id
+        products_category = inventory3.line_ids.mapped('product_id.categ_id')
+        self.assertEqual(len(products_category), 1, "Inventory line should have only one category")
+        # check product with exhausted in stock location
+        product = self.ProductObj.create({'name': 'Product A', 'type': 'product'})
+        inventory4 = self.InvObj.create({
+                                    'name': 'Test Exhausted Product',
+                                    'filter': 'product',
+                                    'location_id': self.stock_location,
+                                    'product_id': product.id,
+                                    'exhausted': True,
+                                })
+        inventory4.prepare_inventory()
+        inventory4._get_inventory_lines_values()
+        self.assertEqual(len(inventory4.line_ids), 1, "One inventory line should be created.")
 
     def test_30_check_with_no_incoming_lot(self):
         """ Picking in without lots and picking out with"""

@@ -72,6 +72,11 @@ class Inventory(models.Model):
              "(e.g. Cycle Counting) you can choose 'Manual Selection of Products' and the system won't propose anything.  You can also let the "
              "system propose for a single product / lot /... ")
     total_qty = fields.Float('Total Quantity', compute='_compute_total_qty')
+    category_id = fields.Many2one(
+        'product.category', 'Inventoried Category',
+        readonly=True,states={'draft': [('readonly', False)]},
+        help="Specify Product Category to focus your inventory on a particular Category.")
+    exhausted = fields.Boolean('Include Exhausted Products',readonly=True, states={'draft': [('readonly', False)]})
 
     @api.one
     def _compute_total_qty(self):
@@ -83,8 +88,9 @@ class Inventory(models.Model):
         in 'Settings\Warehouse'. """
         res_filter = [
             ('none', _('All products')),
-            ('partial', _('Select products manually')),
-            ('product', _('One product only'))]
+            ('category', _('One product category')),
+            ('product', _('One product only')),
+            ('partial', _('Select products manually'))]
         stock_settings = self.env['stock.config.settings'].search([], limit=1, order='id DESC')
         if not stock_settings:
             return res_filter
@@ -100,12 +106,19 @@ class Inventory(models.Model):
     def onchange_filter(self):
         if self.filter not in ('product', 'product_owner'):
             self.product_id = False
+            self.exhausted =False
         if self.filter != 'lot':
             self.lot_id = False
         if self.filter not in ('owner', 'product_owner'):
             self.partner_id = False
         if self.filter != 'pack':
             self.package_id = False
+        if self.filter in ('pack','lot', 'product_owner', 'owner','partial'):
+            self.exhausted = False
+        if self.filter != 'category':
+            self.category_id = False
+        if self.filter == 'product':
+            self.exhausted = True
 
     @api.one
     @api.constrains('filter', 'product_id', 'lot_id', 'partner_id', 'package_id')
@@ -179,21 +192,36 @@ class Inventory(models.Model):
         locations = self.env['stock.location'].search([('id', 'child_of', [self.location_id.id])])
         domain = ' location_id in %s'
         args = (tuple(locations.ids),)
+        vals = []
+        Product = self.env['product.product']
+        products = self.env['product.product']
+        quant_products = self.env['product.product']
+        #case 1: Filter on One owner only or One product for a specific owner
         if self.partner_id:
             domain += ' AND owner_id = %s'
             args += (self.partner_id.id,)
+        #case 2: Filter on One Lot/Serial Number
         if self.lot_id:
             domain += ' AND lot_id = %s'
             args += (self.lot_id.id,)
+        #case 3: Filter on One product
         if self.product_id:
             domain += ' AND product_id = %s'
             args += (self.product_id.id,)
+            products |= self.product_id
+        #case 4: Filter on A Pack
         if self.package_id:
             domain += ' AND package_id = %s'
             args += (self.package_id.id,)
+        #case 5: Filter on One product category + Exahausted Products
+        if self.category_id:
+            categ_products = Product.search([('categ_id', '=', self.category_id.id)])
+            if not categ_products:
+                return []
+            domain += ' AND product_id in %s'
+            args += (tuple(categ_products.ids),)
+            products |= categ_products
 
-        Product = self.env['product.product']
-        vals = []
         self.env.cr.execute("""SELECT product_id, sum(qty) as product_qty, location_id, lot_id as prod_lot_id, package_id, owner_id as partner_id
             FROM stock_quant
             WHERE %s
@@ -204,15 +232,42 @@ class Inventory(models.Model):
                 product_data[void_field] = False
             product_data['theoretical_qty'] = product_data['product_qty']
             if product_data['product_id']:
-                product_data['product_uom_id'] = Product.browse(product_data['product_id']).uom_id.id
+                product = Product.browse(product_data['product_id'])
+                product_data['product_uom_id'] = product.uom_id.id
+                # merging browsed recordset to quant_products
+                quant_products |= product
             vals.append(product_data)
+        if self.exhausted:
+            exhausted_vals = self._get_exhausted_inventory_line(products, quant_products)
+            vals.extend(exhausted_vals)
         return vals
 
+    def _get_exhausted_inventory_line(self, products, quant_products):
+        '''
+        This Function prepares the Invetory Lines With Exhausted Products
+        :param products: products With Selected Filter.
+        :param quant_products: products available in stock_qaunt
+        '''
+        vals = []
+        exhausted_domain = [('type', 'not in', ('service', 'consu', 'digital'))]
+        if products:
+            exhausted_products = products - quant_products
+            exhausted_domain += [('id', 'in', exhausted_products.ids)]
+        else:
+            exhausted_domain += [('id', 'not in', quant_products.ids)]
+        inv_prods = self.env['product.product'].search(exhausted_domain)
+        for product in inv_prods:
+            vals.append({
+                'inventory_id': self.id,
+                'product_id': product.id,
+                'location_id': self.location_id.id,
+            })
+        return vals
 
 class InventoryLine(models.Model):
     _name = "stock.inventory.line"
     _description = "Inventory Line"
-    _order = "inventory_id, location_name, product_code, product_name, prodlot_name"
+    _order = "product_name ,inventory_id, location_name, product_code, prodlot_name"
 
     inventory_id = fields.Many2one(
         'stock.inventory', 'Inventory',
