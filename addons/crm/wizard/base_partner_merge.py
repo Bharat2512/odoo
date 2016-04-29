@@ -1,5 +1,7 @@
-#!/usr/bin/env python
-from __future__ import absolute_import
+# -*- coding: utf-8 -*-
+# Part of Odoo. See LICENSE file for full copyright and licensing details.
+
+from ast import literal_eval
 from email.utils import parseaddr
 import functools
 import htmlentitydefs
@@ -8,25 +10,15 @@ import logging
 import operator
 import psycopg2
 import re
-from ast import literal_eval
-from openerp.exceptions import ValidationError
-from openerp.tools import mute_logger
 
 # Validation Library https://pypi.python.org/pypi/validate_email/1.1
 from .validate_email import validate_email
 
-import openerp
-from openerp.osv import osv
-from openerp.osv.orm import browse_record
-from openerp.tools.translate import _
-from openerp.exceptions import UserError
-
-import odoo
 from odoo import api, fields, models
-from odoo import SUPERUSER_ID
+from odoo import SUPERUSER_ID, _
+from odoo.exceptions import ValidationError, UserError
+from odoo.tools import mute_logger
 
-
-pattern = re.compile("&(\w+?);")
 
 _logger = logging.getLogger('base.partner.merge')
 
@@ -40,14 +32,14 @@ def html_entity_decode_char(m, defs=htmlentitydefs.entitydefs):
 
 
 def html_entity_decode(string):
+    pattern = re.compile("&(\w+?);")
     return pattern.sub(html_entity_decode_char, string)
 
 
 def sanitize_email(email):
     assert isinstance(email, basestring) and email
 
-    result = re.subn(r';|/|:', ',',
-                     html_entity_decode(email or ''))[0].split(',')
+    result = re.subn(r';|/|:', ',', html_entity_decode(email or ''))[0].split(',')
 
     emails = [parseaddr(email)[1]
               for item in result
@@ -56,10 +48,6 @@ def sanitize_email(email):
     return [email.lower()
             for email in emails
             if validate_email(email)]
-
-
-def is_integer_list(ids):
-    return all(isinstance(i, (int, long)) for i in ids)
 
 
 class MergePartnerLine(models.TransientModel):
@@ -78,6 +66,7 @@ class MergePartnerAutomatic(models.TransientModel):
         merge. We use two objects, the first one is the wizard for the end-user.
         And the second will contain the partner list to merge.
     """
+
     _name = 'base.partner.merge.automatic.wizard'
 
     @api.model
@@ -113,7 +102,6 @@ class MergePartnerAutomatic(models.TransientModel):
     exclude_journal_item = fields.Boolean('Journal Items associated to the contact')
     maximum_group = fields.Integer('Maximum of Group of Contacts')
 
-
     # ----------------------------------------
     # Update method. Core methods to merge steps
     # ----------------------------------------
@@ -143,11 +131,11 @@ class MergePartnerAutomatic(models.TransientModel):
 
     @api.model
     def _update_foreign_keys(self, src_partners, dst_partner):
-        """ Update all foreign key for the src_partner
+        """ Update all foreign key from the src_partner to dst_partner. All many2one fields will be updated.
             :param src_partners : merge source res.partner recordset (does not include destination one)
             :param dst_partner : record of destination res.partner
         """
-        _logger.debug('_update_foreign_keys for dst_partner: %s for src_partners: %r', dst_partner.id, src_partners.ids)
+        _logger.debug('_update_foreign_keys for dst_partner: %s for src_partners: %s', dst_partner.id, str(src_partners.ids))
 
         # find the many2one relation to a partner
         Partner = self.env['res.partner']
@@ -207,30 +195,35 @@ class MergePartnerAutomatic(models.TransientModel):
                                 SELECT id FROM cycle WHERE id = parent_id AND id = %s
                             """
                             self._cr.execute(query, (dst_partner.id,))
+                            # NOTE JEM : shouldn't we fetch the data ?
                 except psycopg2.Error:
                     # updating fails, most likely due to a violated unique constraint
                     # keeping record with nonexistent partner_id is useless, better delete it
                     query = 'DELETE FROM %(table)s WHERE %(column)s IN %%s' % query_dic
                     self._cr.execute(query, (tuple(src_partners.ids),))
 
-    def _update_reference_fields(self, cr, uid, src_partners, dst_partner, context=None):
-        _logger.debug('_update_reference_fields for dst_partner: %s for src_partners: %r', dst_partner.id, list(map(operator.attrgetter('id'), src_partners)))
+    @api.model
+    def _update_reference_fields(self, src_partners, dst_partner):
+        """ Update all reference fields from the src_partner to dst_partner.
+            :param src_partners : merge source res.partner recordset (does not include destination one)
+            :param dst_partner : record of destination res.partner
+        """
+        _logger.debug('_update_reference_fields for dst_partner: %s for src_partners: %r', dst_partner.id, src_partners.ids)
 
-        def update_records(model, src, field_model='model', field_id='res_id', context=None):
-            proxy = self.pool.get(model)
-            if proxy is None:
+        def update_records(model, src, field_model='model', field_id='res_id'):
+            Model = self.env[model] if model in self.env else None
+            if Model is None:
                 return
-            domain = [(field_model, '=', 'res.partner'), (field_id, '=', src.id)]
-            ids = proxy.search(cr, openerp.SUPERUSER_ID, domain, context=context)
+            records = Model.sudo().search([(field_model, '=', 'res.partner'), (field_id, '=', src.id)])
             try:
-                with mute_logger('openerp.sql_db'), cr.savepoint():
-                    return proxy.write(cr, openerp.SUPERUSER_ID, ids, {field_id: dst_partner.id}, context=context)
+                with mute_logger('openerp.sql_db'), self._cr.savepoint():
+                    return records.sudo().write({field_id: dst_partner.id})
             except psycopg2.Error:
                 # updating fails, most likely due to a violated unique constraint
                 # keeping record with nonexistent partner_id is useless, better delete it
-                return proxy.unlink(cr, openerp.SUPERUSER_ID, ids, context=context)
+                return records.sudo().unlink()
 
-        update_records = functools.partial(update_records, context=context)
+        update_records = functools.partial(update_records)
 
         for partner in src_partners:
             update_records('calendar', src=partner, field_model='model_id.model')
@@ -240,30 +233,24 @@ class MergePartnerAutomatic(models.TransientModel):
             update_records('marketing.campaign.workitem', src=partner, field_model='object_id.model')
             update_records('ir.model.data', src=partner)
 
-        proxy = self.pool['ir.model.fields']
-        domain = [('ttype', '=', 'reference')]
-        record_ids = proxy.search(cr, openerp.SUPERUSER_ID, domain, context=context)
-
-        for record in proxy.browse(cr, openerp.SUPERUSER_ID, record_ids, context=context):
+        records = self.env['ir.model.fields'].search([('ttype', '=', 'reference')])
+        for record in records.sudo():
             try:
-                proxy_model = self.pool[record.model]
-                column = proxy_model._columns[record.name]
+                Model = self.env[record.model]
+                field = Model._fields[record.name]
             except KeyError:
                 # unknown model or field => skip
                 continue
 
-            if isinstance(column, openerp.fields.function):
+            if field.compute is not None:
                 continue
 
             for partner in src_partners:
-                domain = [
-                    (record.name, '=', 'res.partner,%d' % partner.id)
-                ]
-                model_ids = proxy_model.search(cr, openerp.SUPERUSER_ID, domain, context=context)
+                records_ref = Model.sudo().search([(record.name, '=', 'res.partner,%d' % partner.id)])
                 values = {
                     record.name: 'res.partner,%d' % dst_partner.id,
                 }
-                proxy_model.write(cr, openerp.SUPERUSER_ID, model_ids, values, context=context)
+                records_ref.sudo().write(values)
 
     @api.model
     def _update_values(self, src_partners, dst_partner):
@@ -276,7 +263,7 @@ class MergePartnerAutomatic(models.TransientModel):
         model_fields = dst_partner._fields
 
         def write_serializer(item):
-            if isinstance(item, browse_record):
+            if isinstance(item, models.BaseModel):
                 return item.id
             else:
                 return item
@@ -305,59 +292,51 @@ class MergePartnerAutomatic(models.TransientModel):
             :param partner_ids : ids of partner to merge
             :param dst_partner : record of destination res.partner
         """
-        proxy = self.env['res.partner']
         Partner = self.env['res.partner']
-
-        partner_ids = []
-        partners = Partner.browse(partner_ids).exists()
-
-        if len(partners) < 2:
+        partner_ids = Partner.browse(partner_ids).exists().ids
+        if len(partner_ids) < 2:
             return
 
-        if len(partners) > 3:
+        if len(partner_ids) > 3:
             raise UserError(_("For safety reasons, you cannot merge more than 3 contacts together. You can re-open the wizard several times if needed."))
 
         # check if the list of partners to merge contains child/parent relation
         child_ids = set()
-        for partner_id in partners.ids:
+        for partner_id in partner_ids:
             child_ids = child_ids.union(set(Partner.search([('id', 'child_of', [partner_id])]).ids) - set([partner_id]))
         if set(partner_ids).intersection(child_ids):
             raise UserError(_("You cannot merge a contact with one of his parent."))
 
         # check only admin can merge partners with different emails
-        if SUPERUSER_ID != self._uid and len(set(partners.mapped('email'))) > 1:
+        if SUPERUSER_ID != self.env.uid and len(set(partner.email for partner in Partner.browse(partner_ids))) > 1:
             raise UserError(_("All contacts must have the same email. Only the Administrator can merge contacts with different emails."))
 
         # remove dst_partner from partners to merge
-        if dst_partner and dst_partner in partners:
-            src_partners = partners - dst_partner
-        else:  # if no dst_partner take the last one
-            ordered_partners = self._get_ordered_partner(partners.ids)
+        if dst_partner and dst_partner.id in partner_ids:
+            src_partners = Partner.browse([pid for pid in partner_ids if pid != dst_partner.id])
+        else:
+            ordered_partners = self._get_ordered_partner(partner_ids)
             dst_partner = ordered_partners[-1]
             src_partners = ordered_partners[:-1]
         _logger.info("dst_partner: %s", dst_partner.id)
 
         # FIXME : is it still required to make and exception for account.move.line since accounting v9.0 ?
-        if SUPERUSER_ID != self._uid and self._model_is_installed('account.move.line') and self.env['account.move.line'].sudo().search([('partner_id', 'in', src_partners.ids)]):
+        if SUPERUSER_ID != self.env.uid and 'account.move.line' in self.env and self.env['account.move.line'].sudo().search([('partner_id', 'in', [partner.id for partner in src_partners])]):
             raise UserError(_("Only the destination contact may be linked to existing Journal Items. Please ask the Administrator if you need to merge several contacts linked to existing Journal Items."))
 
         # call sub methods to do the merge
-        self._update_foreign_keys(src_partners, dst_partner)
-        self._update_reference_fields(src_partners, dst_partner)
-        self._update_values(src_partners, dst_partner)
+        call_it = lambda function: function(src_partners, dst_partner)
+        call_it(self._update_foreign_keys)
+        call_it(self._update_reference_fields)
+        call_it(self._update_values)
 
+        _logger.info('(uid = %s) merged the partners %r with %s', self._uid, src_partners.ids, dst_partner.id)
+        dst_partner.message_post(body='%s %s' % (_("Merged with the following partners:"), ", ".join('%s <%s> (ID %s)' % (p.name, p.email or 'n/a', p.id) for p in src_partners)))
 
-        _logger.info('(uid = %s) merged the partners %r with %s', uid, list(map(operator.attrgetter('id'), src_partners)), dst_partner.id)
-        dst_partner.message_post(body='%s %s'%(_("Merged with the following partners:"), ", ".join('%s<%s>(ID %s)' % (p.name, p.email or 'n/a', p.id) for p in src_partners)))
+        # delete source partner, since they are merged
+        src_partners.unlink()
 
-        for partner in src_partners:
-            partner.unlink()
-
-
-
-
-
-
+    #TODO JEM : remove me, since it is not used anymore
     def clean_emails(self, cr, uid, context=None):
         """
         Clean the email address of the partner, if there is an email field with
@@ -411,10 +390,17 @@ class MergePartnerAutomatic(models.TransientModel):
                 raise
         return True
 
-    def close_cb(self, cr, uid, ids, context=None):
-        return {'type': 'ir.actions.act_window_close'}
+    # ----------------------------------------
+    # Helpers
+    # ----------------------------------------
 
+    @api.model
     def _generate_query(self, fields, maximum_group=100):
+        """ Build the SQL query on res.partner table to group them according to given criteria
+            :param fields : list of column names to group by the partners
+            :param maximum_group : limit of the query
+        """
+        # make the list of column to group by in sql query
         sql_fields = []
         for field in fields:
             if field in ['email', 'name']:
@@ -423,17 +409,16 @@ class MergePartnerAutomatic(models.TransientModel):
                 sql_fields.append("replace(%s, ' ', '')" % field)
             else:
                 sql_fields.append(field)
-
         group_fields = ', '.join(sql_fields)
 
+        # where clause : for given group by columns, only keep the 'not null' record
         filters = []
         for field in fields:
             if field in ['email', 'name', 'vat']:
                 filters.append((field, 'IS NOT', 'NULL'))
+        criteria = ' AND '.join('%s %s %s' % (field, operator, value) for field, operator, value in filters)
 
-        criteria = ' AND '.join('%s %s %s' % (field, operator, value)
-                                for field, operator, value in filters)
-
+        # build the query
         text = [
             "SELECT min(id), array_agg(id)",
             "FROM res_partner",
@@ -455,57 +440,91 @@ class MergePartnerAutomatic(models.TransientModel):
 
         return ' '.join(text)
 
-    def _compute_selected_groupby(self, this):
-        group_by_str = 'group_by_'
-        group_by_len = len(group_by_str)
+    @api.model
+    def _compute_selected_groupby(self):
+        """ Returns the list of field names the partner can be grouped (as merge
+            criteria) according to the option checked on the wizard
+        """
+        groups = []
+        group_by_prefix = 'group_by_'
 
-        fields = [
-            key[group_by_len:]
-            for key in self._columns.keys()
-            if key.startswith(group_by_str)
-        ]
-
-        groups = [
-            field
-            for field in fields
-            if getattr(this, '%s%s' % (group_by_str, field), False)
-        ]
+        for field_name in self._fields:
+            if field_name.startswith(group_by_prefix):
+                if getattr(self, field_name, False):
+                    groups.append(field_name[len(group_by_prefix):])
 
         if not groups:
             raise UserError(_("You have to specify a filter for your selection"))
 
         return groups
 
-    def next_cb(self, cr, uid, ids, context=None):
+    @api.model
+    def _partner_use_in(self, aggr_ids, models):
+        """ Check if there is no occurence of this group of partner in the selected model
+            :param aggr_ids : stringified list of partner ids separated with a comma (sql array_agg)
+            :param models : dict mapping a model name with its foreign key with res_partner table
         """
-        Don't compute any thing
-        """
-        context = dict(context or {}, active_test=False)
-        this = self.browse(cr, uid, ids[0], context=context)
-        if this.current_line_id:
-            this.current_line_id.unlink()
-        return self._next_screen(cr, uid, this, context)
+        for model, field in models.iteritems():
+            proxy = self.env[model]
+            if proxy.search_count([(field, 'in', aggr_ids)]):
+                return True
+        return False
 
     @api.model
     def _get_ordered_partner(self, partner_ids):
-        """ returns a `res.partner` recordset ordered by create_date/active fields
+        """ Helper : returns a `res.partner` recordset ordered by create_date/active fields
             :param partner_ids : list of partner ids to sort
         """
         partners = self.env['res.partner'].browse(partner_ids)
         ordered_partners = sorted(sorted(partners, key=operator.attrgetter('create_date'), reverse=True), key=operator.attrgetter('active'), reverse=True)
-        return ordered_partners
+        return self.env['res.partner'].browse([partner.id for partner in ordered_partners])
 
-    def _next_screen(self, cr, uid, this, context=None):
-        this.refresh()
+    @api.multi
+    def _compute_models(self):
+        """ Compute the different models needed by the system if you want to exclude some partners. """
+        self.ensure_one()
+        model_mapping = {}
+        if self.exclude_contact:
+            model_mapping['res.users'] = 'partner_id'
+        if 'account.move.line' in self.env and self.exclude_journal_item:
+            model_mapping['account.move.line'] = 'partner_id'
+        return model_mapping
+
+    # ----------------------------------------
+    # Actions
+    # ----------------------------------------
+
+    @api.multi
+    def close_cb(self):
+        self.ensure_one()
+        return {'type': 'ir.actions.act_window_close'}
+
+    @api.multi
+    def next_cb(self):
+        """ Skip this wizard line. Don't compute any thing, and simply redirect to the new step."""
+        self.ensure_one()
+        if self.current_line_id:
+            self.current_line_id.unlink()
+        return self._next_screen()
+
+    #TODO JEM : rename with action_ prefix
+    @api.multi
+    def _next_screen(self):
+        """ return the action of the next screen ; this means the wizard is set to treat the
+            next wizard line. Each line is a subset of partner that can be merged together.
+            If no line left, the end screen will be displayed (but an action is still returned).
+        """
+        self.ensure_one()
+        self.refresh()  # TODO JEM : it is deprecated, so still usefull ?
         values = {}
-        if this.line_ids:
+        if self.line_ids:
             # in this case, we try to find the next record.
-            current_line = this.line_ids[0]
+            current_line = self.line_ids[0]
             current_partner_ids = literal_eval(current_line.aggr_ids)
             values.update({
                 'current_line_id': current_line.id,
                 'partner_ids': [(6, 0, current_partner_ids)],
-                'dst_partner_id': self._get_ordered_partner(cr, uid, current_partner_ids, context)[-1].id,
+                'dst_partner_id': self._get_ordered_partner(current_partner_ids)[-1].id,
                 'state': 'selection',
             })
         else:
@@ -515,124 +534,88 @@ class MergePartnerAutomatic(models.TransientModel):
                 'state': 'finished',
             })
 
-        this.write(values)
+        self.write(values)
 
         return {
             'type': 'ir.actions.act_window',
-            'res_model': this._name,
-            'res_id': this.id,
+            'res_model': self._name,
+            'res_id': self.id,
             'view_mode': 'form',
             'target': 'new',
         }
 
-    # TODO JEM : can't it be more effecient than making a sql search ?
-    @api.model
-    def _model_is_installed(self, model):
-        return self.env['ir.model'].search_count([('model', '=', model)]) > 0
-
-    def _partner_use_in(self, cr, uid, aggr_ids, models, context=None):
+    @api.multi
+    def _process_query(self, query):
+        """ Execute the select request and write the result in this wizard
+            :param query : the SQL query used to fill the wizard line
         """
-        Check if there is no occurence of this group of partner in the selected
-        model
-        """
-        for model, field in models.iteritems():
-            proxy = self.pool.get(model)
-            domain = [(field, 'in', aggr_ids)]
-            if proxy.search_count(cr, uid, domain, context=context):
-                return True
-        return False
+        self.ensure_one()
+        model_mapping = self._compute_models()
 
-    def compute_models(self, cr, uid, ids, context=None):
-        """
-        Compute the different models needed by the system if you want to exclude
-        some partners.
-        """
-        assert is_integer_list(ids)
-
-        this = self.browse(cr, uid, ids[0], context=context)
-
-        models = {}
-        if this.exclude_contact:
-            models['res.users'] = 'partner_id'
-
-        if self._model_is_installed(cr, uid, 'account.move.line', context=context) and this.exclude_journal_item:
-            models['account.move.line'] = 'partner_id'
-
-        return models
-
-    def _process_query(self, cr, uid, ids, query, context=None):
-        """
-        Execute the select request and write the result in this wizard
-        """
-        proxy = self.pool.get('base.partner.merge.line')
-        this = self.browse(cr, uid, ids[0], context=context)
-        models = self.compute_models(cr, uid, ids, context=context)
-        cr.execute(query)
+        # group partner query
+        self._cr.execute(query)
 
         counter = 0
-        for min_id, aggr_ids in cr.fetchall():
-            if models and self._partner_use_in(cr, uid, aggr_ids, models, context=context):
+        for min_id, aggr_ids in self._cr.fetchall():
+            # exclude partner according to options
+            if model_mapping and self._partner_use_in(aggr_ids, model_mapping):
                 continue
-            values = {
-                'wizard_id': this.id,
+            self.env['base.partner.merge.line'].create({
+                'wizard_id': self.id,
                 'min_id': min_id,
                 'aggr_ids': aggr_ids,
-            }
-
-            proxy.create(cr, uid, values, context=context)
+            })
             counter += 1
 
-        values = {
+        self.write({
             'state': 'selection',
             'number_group': counter,
-        }
-
-        this.write(values)
+        })
 
         _logger.info("counter: %s", counter)
 
-    def start_process_cb(self, cr, uid, ids, context=None):
+    @api.multi
+    def start_process_cb(self):
+        """ Start the process 'Merge with Manual Check'. Fill the wizard according to the group_by and exclude
+            options, and redirect to the first step (treatment of first wizard line). After, for each subset of
+            partner to merge, the wizard will be actualized.
+                - Compute the selected groups (with duplication)
+                - If the user has selected the 'exclude_xxx' fields, avoid the partners
         """
-        Start the process.
-        * Compute the selected groups (with duplication)
-        * If the user has selected the 'exclude_XXX' fields, avoid the partners.
+        self.ensure_one()
+        groups = self._compute_selected_groupby()
+        query = self._generate_query(groups, self.maximum_group)
+        self._process_query(query)
+        return self._next_screen()
+
+    @api.multi
+    def automatic_process_cb(self):
+        """ Start the process 'Merge Automatically'. This will fill the wizard with the same mechanism as 'Merge
+            with Manual Check', but instead of refreshing wizard with the current line, it will automatically process
+            all lines by merging partner grouped according to the checked options.
         """
-        assert is_integer_list(ids)
+        self.ensure_one()
+        self.start_process_cb()  # here we don't redirect to the next screen, since it is automatic process
+        self.refresh()   # TODO JEM : deprecated, what to do ?
 
-        context = dict(context or {}, active_test=False)
-        this = self.browse(cr, uid, ids[0], context=context)
-        groups = self._compute_selected_groupby(this)
-        query = self._generate_query(groups, this.maximum_group)
-        self._process_query(cr, uid, ids, query, context=context)
-
-        return self._next_screen(cr, uid, this, context)
-
-    def automatic_process_cb(self, cr, uid, ids, context=None):
-        assert is_integer_list(ids)
-        this = self.browse(cr, uid, ids[0], context=context)
-        this.start_process_cb()
-        this.refresh()
-
-        for line in this.line_ids:
+        for line in self.line_ids:
             partner_ids = literal_eval(line.aggr_ids)
-            self._merge(cr, uid, partner_ids, context=context)
+            self._merge(partner_ids)
             line.unlink()
-            cr.commit()
+            self._cr.commit()  # TODO JEM : explain why
 
-        this.write({'state': 'finished'})
+        self.write({'state': 'finished'})
         return {
             'type': 'ir.actions.act_window',
-            'res_model': this._name,
-            'res_id': this.id,
+            'res_model': self._name,
+            'res_id': self.id,
             'view_mode': 'form',
             'target': 'new',
         }
 
-    def parent_migration_process_cb(self, cr, uid, ids, context=None):
-        assert is_integer_list(ids)
-
-        context = dict(context or {}, active_test=False)
-        this = self.browse(cr, uid, ids[0], context=context)
+    @api.multi
+    def parent_migration_process_cb(self):
+        self.ensure_one()
 
         query = """
             SELECT
@@ -659,17 +642,17 @@ class MergePartnerAutomatic(models.TransientModel):
                 min(p1.id)
         """
 
-        self._process_query(cr, uid, ids, query, context=context)
+        self._process_query(query)
 
-        for line in this.line_ids:
+        for line in self.line_ids:
             partner_ids = literal_eval(line.aggr_ids)
-            self._merge(cr, uid, partner_ids, context=context)
+            self._merge(partner_ids)
             line.unlink()
-            cr.commit()
+            self._cr.commit()
 
-        this.write({'state': 'finished'})
+        self.write({'state': 'finished'})
 
-        cr.execute("""
+        self._cr.execute("""
             UPDATE
                 res_partner
             SET
@@ -681,46 +664,24 @@ class MergePartnerAutomatic(models.TransientModel):
 
         return {
             'type': 'ir.actions.act_window',
-            'res_model': this._name,
-            'res_id': this.id,
+            'res_model': self._name,
+            'res_id': self.id,
             'view_mode': 'form',
             'target': 'new',
         }
 
-    def update_all_process_cb(self, cr, uid, ids, context=None):
-        assert is_integer_list(ids)
+    @api.multi
+    def update_all_process_cb(self):
+        self.ensure_one()
+        self.parent_migration_process_cb()
 
-        # WITH RECURSIVE cycle(id, parent_id) AS (
-        #     SELECT id, parent_id FROM res_partner
-        #   UNION
-        #     SELECT  cycle.id, res_partner.parent_id
-        #     FROM    res_partner, cycle
-        #     WHERE   res_partner.id = cycle.parent_id AND
-        #             cycle.id != cycle.parent_id
-        # )
-        # UPDATE  res_partner
-        # SET     parent_id = NULL
-        # WHERE   id in (SELECT id FROM cycle WHERE id = parent_id);
+        # NOTE JEM : seems louche to create a new wizard instead of reuse the current one with updated options.
+        # since it is like this from the initial commit of this wizard, I don't change it. yet ...
+        wizard = self.create({'group_by_vat': True, 'group_by_email': True, 'group_by_name': True})
+        wizard.automatic_process_cb()
 
-        this = self.browse(cr, uid, ids[0], context=context)
-
-        self.parent_migration_process_cb(cr, uid, ids, context=None)
-
-        list_merge = [
-            {'group_by_vat': True, 'group_by_email': True, 'group_by_name': True},
-            # {'group_by_name': True, 'group_by_is_company': True, 'group_by_parent_id': True},
-            # {'group_by_email': True, 'group_by_is_company': True, 'group_by_parent_id': True},
-            # {'group_by_name': True, 'group_by_vat': True, 'group_by_is_company': True, 'exclude_journal_item': True},
-            # {'group_by_email': True, 'group_by_vat': True, 'group_by_is_company': True, 'exclude_journal_item': True},
-            # {'group_by_email': True, 'group_by_is_company': True, 'exclude_contact': True, 'exclude_journal_item': True},
-            # {'group_by_name': True, 'group_by_is_company': True, 'exclude_contact': True, 'exclude_journal_item': True}
-        ]
-
-        for merge_value in list_merge:
-            id = self.create(cr, uid, merge_value, context=context)
-            self.automatic_process_cb(cr, uid, [id], context=context)
-
-        cr.execute("""
+        # NOTE JEM : no idea if this query is usefull
+        self._cr.execute("""
             UPDATE
                 res_partner
             SET
@@ -730,50 +691,35 @@ class MergePartnerAutomatic(models.TransientModel):
                 is_company IS NOT NULL
         """)
 
-        # cr.execute("""
-        #     UPDATE
-        #         res_partner as p1
-        #     SET
-        #         is_company = NULL,
-        #         parent_id = (
-        #             SELECT  p2.id
-        #             FROM    res_partner as p2
-        #             WHERE   p2.email = p1.email AND
-        #                     p2.parent_id != p2.id
-        #             LIMIT 1
-        #         )
-        #     WHERE
-        #         p1.parent_id = p1.id
-        # """)
+        return self._next_screen()
 
-        return self._next_screen(cr, uid, this, context)
+    @api.multi
+    def merge_cb(self):
+        """ Merge Contact button. Merge the selected partners, and redirect to
+            the end screen (since there is no other wizard line to process.
+        """
+        self.ensure_one()
 
-    def merge_cb(self, cr, uid, ids, context=None):
-        assert is_integer_list(ids)
-
-        context = dict(context or {}, active_test=False)
-        this = self.browse(cr, uid, ids[0], context=context)
-
-        partner_ids = set(map(int, this.partner_ids))
-        if not partner_ids:
-            this.write({'state': 'finished'})
+        if not self.partner_ids:
+            self.write({'state': 'finished'})
             return {
                 'type': 'ir.actions.act_window',
-                'res_model': this._name,
-                'res_id': this.id,
+                'res_model': self._name,
+                'res_id': self.id,
                 'view_mode': 'form',
                 'target': 'new',
             }
 
-        self._merge(cr, uid, partner_ids, this.dst_partner_id, context=context)
+        self._merge(self.partner_ids.ids, self.dst_partner_id)
 
-        if this.current_line_id:
-            this.current_line_id.unlink()
+        if self.current_line_id:
+            self.current_line_id.unlink()
 
-        return self._next_screen(cr, uid, this, context)
+        return self._next_screen()
 
+
+    # TODO JEM : remove me since it is not used ?
     def auto_set_parent_id(self, cr, uid, ids, context=None):
-        assert is_integer_list(ids)
 
         # select partner who have one least invoice
         partner_treated = ['@gmail.com']
