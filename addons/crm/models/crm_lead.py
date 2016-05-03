@@ -238,21 +238,19 @@ class Lead(FormatAddress, models.Model):
         if partner_id:
             partner = self.env['res.partner'].browse(partner_id)
 
-            partner_name = False
-            if partner.parent_id:
-                partner_name = partner.parent_id.name
+            partner_name = partner.parent_id.name
             if not partner_name and partner.is_company:
                 partner_name = partner.name
 
             values = {
                 'partner_name': partner_name,
                 'contact_name': partner.name if not partner.is_company else False,
-                'title': partner.title.id if partner.title else False,
+                'title': partner.title.id,
                 'street': partner.street,
                 'street2': partner.street2,
                 'city': partner.city,
-                'state_id': partner.state_id.id if partner.state_id else False,
-                'country_id': partner.country_id.id if partner.country_id else False,
+                'state_id': partner.state_id.id,
+                'country_id': partner.country_id.id,
                 'email_from': partner.email,
                 'phone': partner.phone,
                 'mobile': partner.mobile,
@@ -402,9 +400,9 @@ class Lead(FormatAddress, models.Model):
         action['context'] = {
             'search_default_opportunity_id': self.id if self.type == 'opportunity' else False,
             'default_opportunity_id': self.id if self.type == 'opportunity' else False,
-            'default_partner_id': self.partner_id.id if self.partner_id else False,
+            'default_partner_id': self.partner_id.id,
             'default_partner_ids': partner_ids,
-            'default_team_id': self.team_id.id if self.team_id else False,
+            'default_team_id': self.team_id.id,
             'default_name': self.name,
         }
         return action
@@ -472,8 +470,9 @@ class Lead(FormatAddress, models.Model):
         # helpers
         def _get_first_not_null(attr, opportunities):
             for opp in opportunities:
-                if hasattr(opp, attr) and bool(getattr(opp, attr)):
-                    return getattr(opp, attr)
+                val = opp[attr]
+                if val:
+                    return val
             return False
 
         def _get_first_not_null_id(attr, opportunities):
@@ -481,7 +480,7 @@ class Lead(FormatAddress, models.Model):
             return res.id if res else False
 
         def _concat_all(attr, opportunities):
-            return '\n\n'.join(filter(lambda x: x, [getattr(opp, attr) or '' for opp in opportunities if hasattr(opp, attr)]))
+            return '\n\n'.join(filter(None, (opp[attr] for opp in opportunities)))
 
         # process the fields' values
         data = {}
@@ -501,6 +500,7 @@ class Lead(FormatAddress, models.Model):
         # define the resulting type ('lead' or 'opportunity')
         data['type'] = self._merge_get_result_type()
         return data
+
     @api.one
     def _mail_body(self, fields):
         """ generate the message body with the changed values
@@ -513,23 +513,19 @@ class Lead(FormatAddress, models.Model):
             field = self._fields.get(field_name)
             if field is None:
                 continue
-            value = ''
+
+            value = self[field_name]
             if field.type == 'selection':
-                if callable(field.selection):
-                    key = field.selection(self, self._cr, self._uid, context=self._context)
-                else:
-                    key = field.selection
-                value = dict(key).get(self[field_name], self[field_name])
+                value = dict(field.get_values(self.env)).get(value, value)
             elif field.type == 'many2one':
-                if self[field_name]:
-                    value = self[field_name].sudo().name_get()[0][1]
+                if value:
+                    value = value.sudo().name_get()[0][1]
             elif field.type == 'many2many':
-                if self[field_name]:
-                    for val in self[field_name]:
-                        field_value = val.sudo().name_get()[0][1]
-                        value += field_value + ","
-            else:
-                value = self[field_name]
+                if value:
+                    value = ','.join(
+                        val.name_get()[0][1]
+                        for val in value.sudo()
+                    )
             body.append("%s: %s" % (field.string, value or ''))
         return "<br/>".join(body + ['<br/>'])
 
@@ -741,25 +737,25 @@ class Lead(FormatAddress, models.Model):
             :param parent_id : id of the parent partner (False if no parent)
             :returns res.partner record
         """
-        self.ensure_one()
+        email_split = tools.email_split(self.email_from)
         values = {
             'name': name,
             'user_id': self.user_id.id,
             'comment': self.description,
-            'team_id': self.team_id.id or False,
+            'team_id': self.team_id.id,
             'parent_id': parent_id,
             'phone': self.phone,
             'mobile': self.mobile,
-            'email': tools.email_split(self.email_from) and tools.email_split(self.email_from)[0] or False,
+            'email': email_split[0] if email_split else False,
             'fax': self.fax,
-            'title': self.title.id if self.title else False,
+            'title': self.title.id,
             'function': self.function,
             'street': self.street,
             'street2': self.street2,
             'zip': self.zip,
             'city': self.city,
-            'country_id': self.country_id.id if self.country_id else False,
-            'state_id': self.state_id.id if self.state_id else False,
+            'country_id': self.country_id.id,
+            'state_id': self.state_id.id,
             'is_company': is_company,
             'type': 'contact'
         }
@@ -1066,11 +1062,12 @@ class Lead(FormatAddress, models.Model):
         """ Override the mail.thread method to handle salesman recipients.
             Indeed those will have specific action in their notification emails.
         """
-        group_sale_salesman = self.env['ir.model.data'].xmlid_to_res_id('base.group_sale_salesman')
+        group_sale_salesman = self.env.ref('sales_team.group_sale_salesman')
         for recipient in recipients:
             if recipient.id in done_ids:
                 continue
-            if recipient.user_ids and group_sale_salesman in recipient.user_ids[0].groups_id.ids:
+            # FIXME: why not recipient.user_ids[0].has_group(sales_team.group_sale_salesman)?
+            if recipient.user_ids and group_sale_salesman in recipient.user_ids[0].groups_id:
                 group_data['group_sale_salesman'] |= recipient
                 done_ids.add(recipient.id)
         return super(Lead, self)._notification_group_recipients(message, recipients, done_ids, group_data)
