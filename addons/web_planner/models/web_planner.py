@@ -4,6 +4,17 @@ from urllib import urlencode
 from openerp import api, models, fields
 
 
+class PlannerData(models.Model):
+    _name = 'web.planner.data'
+    _description = 'Planner Data'
+
+    # data field is used to store the data filled by user in planner(JSON Data)
+    data = fields.Text(string="Data")
+    progress = fields.Integer(string="Progress Percentage")
+    company_id = fields.Many2one("res.company", string="Company", default=lambda self: self.env.user.company_id)
+    planner_id = fields.Many2one("web.planner", string="Planner")
+
+
 class Planner(models.Model):
     """Planner Model.
     Each Planner has link to an ir.ui.view record that is a template used
@@ -25,12 +36,33 @@ class Planner(models.Model):
     name = fields.Char(string='Name', required=True)
     menu_id = fields.Many2one('ir.ui.menu', string='Menu', required=True)
     view_id = fields.Many2one('ir.ui.view', string='Template', required=True)
-    progress = fields.Integer(string="Progress Percentage")
-    # data field is used to store the data filled by user in planner(JSON Data)
-    data = fields.Text(string='Data')
+    data_ids = fields.One2many("web.planner.data", "planner_id", string="Data")
+    progress = fields.Integer(compute="_compute_data_progress", inverse="_set_data_progress", string="Progress")
+    data = fields.Text(compute="_compute_data_progress", inverse="_set_data_progress", string="Data")
     tooltip_planner = fields.Html(string='Planner Tooltips', translate=True)
     planner_application = fields.Selection('_get_planner_application', string='Planner Application', required=True)
     active = fields.Boolean(string="Active", default=True, help="If the active field is set to False, it will allow you to hide the planner. This change requires a refresh of your page.")
+
+    def _compute_data_progress(self):
+        company_id = self.env.user.company_id.id
+        for planner in self:
+            planner_data = planner.data_ids.filtered(lambda rec: rec.company_id.id == company_id)
+            planner.data = planner_data.data
+            planner.progress = planner_data.progress
+
+    def _set_data_progress(self):
+        company_id = self.env.user.company_id.id
+        for planner in self:
+            planner_data = planner.data_ids.filtered(lambda rec: rec.company_id.id == company_id)
+            values = {
+                "data": planner.data,
+                "progress": planner.progress
+            }
+            if planner_data:
+                planner_data.write(values)
+            else:
+                values.update({"planner_id": planner.id})
+                planner_data.create(values)
 
     @api.model
     def render(self, template_id, planner_app):
