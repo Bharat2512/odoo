@@ -347,8 +347,11 @@ class BaseModel(object):
 
     CONCURRENCY_CHECK_FIELD = '__last_update'
 
-    def view_init(self, cr, uid, fields_list, context=None):
-        """Override this method to do specific things when a view on the object is opened."""
+    @api.model
+    def view_init(self, fields_list):
+        """ Override this method to do specific things when a form view is
+        opened. This method is invoked by :meth:`~default_get`.
+        """
         pass
 
     def _field_create(self, cr, context=None):
