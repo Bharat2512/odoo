@@ -213,16 +213,11 @@ def get_pg_type(f, type_override=None):
 
 
 class MetaModel(api.Meta):
-    """ Metaclass for the models.
-
-    This class is used as the metaclass for the class :class:`BaseModel` to
-    discover the models defined in a module (without instantiating them).
-    If the automatic discovery is not needed, it is possible to set the model's
-    ``_register`` attribute to False.
-
+    """ The metaclass of all model classes.
+        Its main purpose is to register the models per module.
     """
 
-    module_to_models = {}
+    module_to_models = defaultdict(list)
 
     def __init__(self, name, bases, attrs):
         if not self._register:
@@ -235,7 +230,7 @@ class MetaModel(api.Meta):
 
         # Remember which models to instanciate for this module.
         if not self._custom:
-            self.module_to_models.setdefault(self._module, []).append(self)
+            self.module_to_models[self._module].append(self)
 
         # check for new-api conversion error: leave comma after field definition
         for key, val in attrs.iteritems():
