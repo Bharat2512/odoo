@@ -525,17 +525,15 @@ class BaseModel(object):
         self._add_field(self.CONCURRENCY_CHECK_FIELD, fields.Datetime(
             string='Last Modified on', compute=last_modified_name, automatic=True))
 
-    @api.one
     def compute_concurrency_field(self):
-        self[self.CONCURRENCY_CHECK_FIELD] = \
-            datetime.datetime.utcnow().strftime(DEFAULT_SERVER_DATETIME_FORMAT)
+        for record in self:
+            record[self.CONCURRENCY_CHECK_FIELD] = openerp.fields.Datetime.now()
 
-    @api.one
     @api.depends('create_date', 'write_date')
     def compute_concurrency_field_with_access(self):
-        self[self.CONCURRENCY_CHECK_FIELD] = \
-            self.write_date or self.create_date or \
-            datetime.datetime.utcnow().strftime(DEFAULT_SERVER_DATETIME_FORMAT)
+        for record in self:
+            record[self.CONCURRENCY_CHECK_FIELD] = \
+                record.write_date or record.create_date or openerp.fields.Datetime.now()
 
     #
     # Goal: try to apply inheritance at the instantiation level and
