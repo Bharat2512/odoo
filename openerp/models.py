@@ -274,6 +274,7 @@ PREFETCH_MAX = 1000
 LOG_ACCESS_COLUMNS = ['create_uid', 'create_date', 'write_uid', 'write_date']
 MAGIC_COLUMNS = ['id'] + LOG_ACCESS_COLUMNS
 
+
 class BaseModel(object):
     """ Base class for Odoo models.
 
@@ -307,45 +308,42 @@ class BaseModel(object):
     _register = False           # not visible in ORM registry
     _transient = False          # not transient
 
-    _name = None
-    _columns = {}
-    _constraints = []
-    _custom = False
-    _defaults = {}
-    _rec_name = None
-    _parent_name = 'parent_id'
-    _parent_store = False
-    _parent_order = False
-    _date_name = 'date'
-    _order = 'id'
-    _sequence = None
-    _description = None
-    _needaction = False
-    _translate = True # set to False to disable translations export for this model
+    _name = None                # the model name
+    _description = None         # the model's informal name
+    _custom = False             # should be True for custom models only
 
-    # dict of {field:method}, with method returning the (name_get of records, {id: fold})
-    # to include in the _read_group, if grouped on this field
-    _group_by_full = {}
+    _inherit = None             # Python-inherited models ('model' or ['model'])
+    _inherits = {}              # inherited models {'parent_model': 'm2o_field'}
+    _columns = {}               # field definitions (old API)
+    _defaults = {}              # field defaults (old API)
+    _constraints = []           # Python constraints (old API)
 
-    # structure:
-    #  { 'parent_model': 'm2o_field', ... }
-    _inherits = {}
+    _table = None               # SQL table name used by model
+    _sequence = None            # SQL sequence to use for ID field
+    _sql_constraints = []       # SQL constraints [(name, sql_def, message)]
 
-    # Mapping from inherits'd field name to triple (m, r, f, n) where m is the
-    # model from which it is inherits'd, r is the (local) field towards m, f
-    # is the _column object itself, and n is the original (i.e. top-most)
-    # parent model.
-    # Example:
-    #  { 'field_name': ('parent_model', 'm2o_field_to_reach_parent',
-    #                   field_column_obj, origina_parent_model), ... }
-    _inherit_fields = {}
+    _rec_name = None            # field to use for labeling records
+    _order = 'id'               # default order for searching results
+    _parent_name = 'parent_id'  # the many2one field used as parent field
+    _parent_store = False       # set to True to compute MPTT (parent_left, parent_right)
+    _parent_order = False       # order to use for siblings in MPTT
+    _date_name = 'date'         # field to use for default calendar view
 
-    _table = None
-    _sql_constraints = []
+    _needaction = False         # whether the model supports "need actions" (see mail)
+    _translate = True           # False disables translations export for this model
 
-    # model dependencies, for models backed up by sql views:
-    # {model_name: field_names, ...}
-    _depends = {}
+    _depends = {}               # dependencies of models backed up by sql views
+                                # {model_name: field_names, ...}
+
+    _group_by_full = {}         # {field: method}, where method returns (records
+                                # name_get, {id: fold}) used by read_group()
+
+    # Implementation-generated mapping for inherited fields (with _inherits)
+    # {fname: (mname, rname, column, oname)} where 'mname' is the model from
+    # which 'fname' is inherited, 'rname' is the many2one field towards 'mname',
+    # 'column' is the original _column object itself, and 'oname' is the
+    # original (i.e. top-most) parent model.
+    _inherit_fields = None
 
     CONCURRENCY_CHECK_FIELD = '__last_update'
 
@@ -607,7 +605,7 @@ class BaseModel(object):
         cls._local_sql_constraints = cls.__dict__.get('_sql_constraints', [])
 
         # determine inherited models
-        parents = getattr(cls, '_inherit', [])
+        parents = cls._inherit
         parents = [parents] if isinstance(parents, basestring) else (parents or [])
 
         # determine the model's name
