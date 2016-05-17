@@ -1077,9 +1077,14 @@ class BaseModel(object):
 
         fg = self.fields_get(cr, uid, context=context)
 
-        mode = 'init'
-        current_module = ''
-        noupdate = False
+        # determine values of mode, current_module and noupdate
+        context = context or {}
+        mode = context.get('mode', 'init')
+        current_module = context.get('module', '')
+        noupdate = context.get('noupdate', False)
+
+        # add current module in context for the conversion of xml ids
+        context = dict(context, _import_current_module=current_module)
 
         ids = []
         for id, xid, record, info in self._convert_records(cr, uid,
