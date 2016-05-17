@@ -1282,9 +1282,10 @@ class BaseModel(object):
         return self._rec_name or 'id'
 
     #
-    # Overload this method if you need a window title which depends on the context
+    # Override this method if you need a window title that depends on the context
     #
-    def view_header_get(self, cr, user, view_id=None, view_type='form', context=None):
+    @api.model
+    def view_header_get(self, view_id=None, view_type='form'):
         return False
 
     def user_has_groups(self, cr, uid, groups, context=None):
