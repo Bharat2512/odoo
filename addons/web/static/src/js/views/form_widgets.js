@@ -32,11 +32,7 @@ var WidgetButton = common.FormWidget.extend({
             this.view.default_focus_button = this;
         }
         if (this.node.attrs.icon) {
-            // if the icon isn't a font-awesome one, find it in the icons folder
             this.fa_icon = this.node.attrs.icon.indexOf('fa-') === 0;
-            if (!this.fa_icon && (! /\//.test(this.node.attrs.icon))) {
-                this.node.attrs.icon = '/web/static/src/img/icons/' + this.node.attrs.icon + '.png';
-            }
         }
     },
     start: function() {
@@ -1547,9 +1543,9 @@ var FieldToggleBoolean = common.AbstractField.extend({
         'click': 'set_toggle_button'
     },
     render_value: function () {
-        var $img = this.$('img');
-        var src = $img.attr('src');
-        $img.attr('src', src.substr(0, src.lastIndexOf('/')+1) + (this.get_value() ? 'gtk-yes.png' : 'gtk-normal.png'));
+        var $icon = this.$('i');
+        var src = $icon.attr('class');
+        $icon.attr('class', (this.get_value() ? 'fa fa-circle text-success' : 'fa fa-circle text-muted'));
     },
     set_toggle_button: function () {
         var self = this;
