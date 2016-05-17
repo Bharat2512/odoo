@@ -969,7 +969,8 @@ class BaseModel(object):
             self = self.with_context(export_raw_data=True)
         return {'datas': self.__export_rows(fields_to_export)}
 
-    def load(self, cr, uid, fields, data, context=None):
+    @api.model
+    def load(self, fields, data):
         """
         Attempts to load the data matrix, and returns a list of ids (or
         ``False`` if there was an error and no id could be generated) and a
@@ -983,62 +984,52 @@ class BaseModel(object):
         :type fields: list(str)
         :param data: row-major matrix of data to import
         :type data: list(list(str))
-        :param dict context:
         :returns: {ids: list(int)|False, messages: [Message]}
         """
-        cr.execute('SAVEPOINT model_load')
-        messages = []
-
-        fields = map(fix_import_export_id_paths, fields)
-        ModelData = self.pool['ir.model.data'].clear_caches()
-
-        fg = self.fields_get(cr, uid, context=context)
-
         # determine values of mode, current_module and noupdate
-        context = context or {}
-        mode = context.get('mode', 'init')
-        current_module = context.get('module', '')
-        noupdate = context.get('noupdate', False)
+        mode = self._context.get('mode', 'init')
+        current_module = self._context.get('module', '')
+        noupdate = self._context.get('noupdate', False)
 
         # add current module in context for the conversion of xml ids
-        context = dict(context, _import_current_module=current_module)
+        self = self.with_context(_import_current_module=current_module)
+
+        cr = self._cr
+        cr.execute('SAVEPOINT model_load')
+
+        fields = map(fix_import_export_id_paths, fields)
+        fg = self.fields_get()
 
         ids = []
-        for id, xid, record, info in self._convert_records(cr, uid,
-                self._extract_records(cr, uid, fields, data,
-                                      context=context, log=messages.append),
-                context=context, log=messages.append):
+        messages = []
+        ModelData = self.env['ir.model.data'].clear_caches()
+        extracted = self._extract_records(fields, data, log=messages.append)
+        converted = self._convert_records(extracted, log=messages.append)
+        for id, xid, record, info in converted:
             try:
                 cr.execute('SAVEPOINT model_load_save')
-            except psycopg2.InternalError, e:
+            except psycopg2.InternalError as e:
                 # broken transaction, exit and hope the source error was
                 # already logged
                 if not any(message['type'] == 'error' for message in messages):
-                    messages.append(dict(info, type='error',message=
-                        u"Unknown database error: '%s'" % e))
+                    messages.append(dict(info, type='error',message=u"Unknown database error: '%s'" % e))
                 break
             try:
-                ids.append(ModelData._update(cr, uid, self._name,
-                     current_module, record, mode=mode, xml_id=xid,
-                     noupdate=noupdate, res_id=id, context=context))
+                ids.append(ModelData._update(self._name, current_module, record, mode=mode,
+                                             xml_id=xid, noupdate=noupdate, res_id=id))
                 cr.execute('RELEASE SAVEPOINT model_load_save')
-            except psycopg2.Warning, e:
+            except psycopg2.Warning as e:
                 messages.append(dict(info, type='warning', message=str(e)))
                 cr.execute('ROLLBACK TO SAVEPOINT model_load_save')
-            except psycopg2.Error, e:
-                messages.append(dict(
-                    info, type='error',
-                    **PGERROR_TO_OE[e.pgcode](self, fg, info, e)))
+            except psycopg2.Error as e:
+                messages.append(dict(info, type='error', **PGERROR_TO_OE[e.pgcode](self, fg, info, e)))
                 # Failed to write, log to messages, rollback savepoint (to
                 # avoid broken transaction) and keep going
                 cr.execute('ROLLBACK TO SAVEPOINT model_load_save')
-            except Exception, e:
-                message = (_('Unknown error during import:') +
-                           ' %s: %s' % (type(e), unicode(e)))
+            except Exception as e:
+                message = (_('Unknown error during import:') + ' %s: %s' % (type(e), unicode(e)))
                 moreinfo = _('Resolve other errors first')
-                messages.append(dict(info, type='error',
-                                     message=message,
-                                     moreinfo=moreinfo))
+                messages.append(dict(info, type='error', message=message, moreinfo=moreinfo))
                 # Failed for some reason, perhaps due to invalid data supplied,
                 # rollback savepoint and keep going
                 cr.execute('ROLLBACK TO SAVEPOINT model_load_save')
@@ -1047,15 +1038,15 @@ class BaseModel(object):
             ids = False
         return {'ids': ids, 'messages': messages}
 
-    def _add_fake_fields(self, cr, uid, fields, context=None):
+    def _add_fake_fields(self, fields):
         from openerp.fields import Char, Integer
         fields[None] = Char('rec_name')
         fields['id'] = Char('External ID')
         fields['.id'] = Integer('Database ID')
         return fields
 
-    def _extract_records(self, cr, uid, fields_, data,
-                         context=None, log=lambda a: None):
+    @api.model
+    def _extract_records(self, fields_, data, log=lambda a: None):
         """ Generates record dicts from the data sequence.
 
         The result is a generator of dicts mapping field names to raw
@@ -1071,30 +1062,33 @@ class BaseModel(object):
         """
         fields = dict(self._fields)
         # Fake fields to avoid special cases in extractor
-        fields = self._add_fake_fields(cr, uid, fields, context=context)
+        fields = self._add_fake_fields(fields)
         # m2o fields can't be on multiple lines so exclude them from the
         # is_relational field rows filter, but special-case it later on to
         # be handled with relational fields (as it can have subfields)
         is_relational = lambda field: fields[field].relational
-        get_o2m_values = itemgetter_tuple(
-            [index for index, field in enumerate(fields_)
-                   if fields[field[0]].type == 'one2many'])
-        get_nono2m_values = itemgetter_tuple(
-            [index for index, field in enumerate(fields_)
-                   if fields[field[0]].type != 'one2many'])
-        # Checks if the provided row has any non-empty non-relational field
-        def only_o2m_values(row, f=get_nono2m_values, g=get_o2m_values):
-            return any(g(row)) and not any(f(row))
+        get_o2m_values = itemgetter_tuple([
+            index
+            for index, fnames in enumerate(fields_)
+            if fields[fnames[0]].type == 'one2many'
+        ])
+        get_nono2m_values = itemgetter_tuple([
+            index
+            for index, fnames in enumerate(fields_)
+            if fields[fnames[0]].type != 'one2many'
+        ])
+        # Checks if the provided row has any non-empty one2many fields
+        def only_o2m_values(row):
+            return any(get_o2m_values(row)) and not any(get_nono2m_values(row))
 
         index = 0
-        while True:
-            if index >= len(data): return
-
+        while index < len(data):
             row = data[index]
+
             # copy non-relational fields to record dict
-            record = dict((field[0], value)
-                for field, value in itertools.izip(fields_, row)
-                if not is_relational(field[0]))
+            record = {fnames[0]: value
+                      for fnames, value in itertools.izip(fields_, row)
+                      if not is_relational(fnames[0])}
 
             # Get all following rows which have relational values attached to
             # the current record (no non-relational values)
@@ -1102,34 +1096,31 @@ class BaseModel(object):
                 only_o2m_values, itertools.islice(data, index + 1, None))
             # stitch record row back on for relational fields
             record_span = list(itertools.chain([row], record_span))
-            for relfield in set(
-                    field[0] for field in fields_
-                             if is_relational(field[0])):
-                # FIXME: how to not use _obj without relying on fields_get?
-                Model = self.pool[fields[relfield].comodel_name]
+            for relfield in set(fnames[0] for fnames in fields_ if is_relational(fnames[0])):
+                comodel = self.env[fields[relfield].comodel_name]
 
                 # get only cells for this sub-field, should be strictly
                 # non-empty, field path [None] is for name_get field
-                indices, subfields = zip(*((index, field[1:] or [None])
-                                           for index, field in enumerate(fields_)
-                                           if field[0] == relfield))
+                indices, subfields = zip(*((index, fnames[1:] or [None])
+                                           for index, fnames in enumerate(fields_)
+                                           if fnames[0] == relfield))
 
                 # return all rows which have at least one value for the
                 # subfields of relfield
                 relfield_data = filter(any, map(itemgetter_tuple(indices), record_span))
-                record[relfield] = [subrecord
-                    for subrecord, _subinfo in Model._extract_records(
-                        cr, uid, subfields, relfield_data,
-                        context=context, log=log)]
+                record[relfield] = [
+                    subrecord
+                    for subrecord, _subinfo in comodel._extract_records(subfields, relfield_data, log=log)
+                ]
 
             yield record, {'rows': {
                 'from': index,
-                'to': index + len(record_span) - 1
+                'to': index + len(record_span) - 1,
             }}
             index += len(record_span)
-    
-    def _convert_records(self, cr, uid, records,
-                         context=None, log=lambda a: None):
+
+    @api.model
+    def _convert_records(self, records, log=lambda a: None):
         """ Converts records from the source iterable (recursive dicts of
         strings) into forms which can be written to the database (via
         self.create or (ir.model.data)._update)
@@ -1137,45 +1128,36 @@ class BaseModel(object):
         :returns: a list of triplets of (id, xid, record)
         :rtype: list((int|None, str|None, dict))
         """
-        if context is None: context = {}
-        Converter = self.pool['ir.fields.converter']
-        Translation = self.pool['ir.translation']
-        fields = dict(self._fields)
-        field_names = {name: field.string for name, field in fields.iteritems()}
-        if context.get('lang'):
-            field_names.update(
-                Translation.get_field_string(cr, uid, self._name, context=context)
-            )
+        field_names = {name: field.string for name, field in self._fields.iteritems()}
+        if self.env.lang:
+            field_names.update(self.env['ir.translation'].get_field_string(self._name))
 
-        convert = Converter.for_model(cr, uid, self, context=context)
+        convert = self.env['ir.fields.converter'].for_model(self)
 
-        def _log(base, field, exception):
+        def _log(base, record, field, exception):
             type = 'warning' if isinstance(exception, Warning) else 'error'
             # logs the logical (not human-readable) field name for automated
             # processing of response, but injects human readable in message
-            record = dict(base, type=type, field=field,
-                          message=unicode(exception.args[0]) % base)
+            exc_vals = dict(base, record=record, field=field_names[field])
+            record = dict(base, type=type, record=record, field=field,
+                          message=unicode(exception.args[0]) % exc_vals)
             if len(exception.args) > 1 and exception.args[1]:
                 record.update(exception.args[1])
             log(record)
 
         stream = CountingStream(records)
         for record, extras in stream:
-            dbid = False
-            xid = False
-            # name_get/name_create
-            if None in record: pass
             # xid
-            if 'id' in record:
-                xid = record['id']
+            xid = record.get('id', False)
             # dbid
+            dbid = False
             if '.id' in record:
                 try:
                     dbid = int(record['.id'])
                 except ValueError:
                     # in case of overridden id column
                     dbid = record['.id']
-                if not self.search(cr, uid, [('id', '=', dbid)], context=context):
+                if not self.search([('id', '=', dbid)]):
                     log(dict(extras,
                         type='error',
                         record=stream.index,
@@ -1183,8 +1165,7 @@ class BaseModel(object):
                         message=_(u"Unknown database identifier '%s'") % dbid))
                     dbid = False
 
-            converted = convert(record, lambda field, err:\
-                _log(dict(extras, record=stream.index, field=field_names[field]), field, err))
+            converted = convert(record, functools.partial(_log, extras, stream.index))
 
             yield dbid, xid, converted, dict(extras, record=stream.index)
 
