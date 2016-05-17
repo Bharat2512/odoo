@@ -38,6 +38,7 @@ import babel.dates
 import dateutil.relativedelta
 import psycopg2
 from lxml import etree
+from lxml.builder import E
 
 import openerp
 from . import SUPERUSER_ID
@@ -1312,72 +1313,64 @@ class BaseModel(object):
                     return True
         return False
 
-    def _get_default_form_view(self, cr, user, context=None):
+    @api.model
+    def _get_default_form_view(self):
         """ Generates a default single-line form view using all fields
         of the current model except the m2m and o2m ones.
 
-        :param cr: database cursor
-        :param int user: user id
-        :param dict context: connection context
         :returns: a form view as an lxml document
         :rtype: etree._Element
         """
-        view = etree.Element('form', string=self._description)
-        group = etree.SubElement(view, 'group', col="4")
+        group = E.group(col="4")
         for fname, field in self._fields.iteritems():
             if field.automatic or field.type in ('one2many', 'many2many'):
                 continue
-
-            etree.SubElement(group, 'field', name=fname)
+            group.append(E.field(name=fname))
             if field.type == 'text':
-                etree.SubElement(group, 'newline')
+                group.append(E.newline())
+        group.append(E.separator())
+        return E.form(group, string=self._description)
 
-        etree.SubElement(group, 'separator')
-        return view
-
-    def _get_default_search_view(self, cr, user, context=None):
+    @api.model
+    def _get_default_search_view(self):
         """ Generates a single-field search view, based on _rec_name.
 
-        :param cr: database cursor
-        :param int user: user id
-        :param dict context: connection context
         :returns: a tree view as an lxml document
         :rtype: etree._Element
         """
-        view = etree.Element('search', string=self._description)
-        etree.SubElement(view, 'field', name=self._rec_name_fallback(cr, user, context))
-        return view
+        element = E.field(name=self._rec_name_fallback())
+        return E.search(element, string=self._description)
 
-    def _get_default_tree_view(self, cr, user, context=None):
+    @api.model
+    def _get_default_tree_view(self):
         """ Generates a single-field tree view, based on _rec_name.
 
-        :param cr: database cursor
-        :param int user: user id
-        :param dict context: connection context
         :returns: a tree view as an lxml document
         :rtype: etree._Element
         """
-        view = etree.Element('tree', string=self._description)
-        etree.SubElement(view, 'field', name=self._rec_name_fallback(cr, user, context))
-        return view
+        element = E.field(name=self._rec_name_fallback())
+        return E.tree(element, string=self._description)
 
-    def _get_default_pivot_view(self, cr, user, context=None):
-        view = etree.Element('pivot', string=self._description)
-        return view
-        
-    def _get_default_calendar_view(self, cr, user, context=None):
+    @api.model
+    def _get_default_pivot_view(self):
+        """ Generates an empty pivot view.
+
+        :returns: a pivot view as an lxml document
+        :rtype: etree._Element
+        """
+        return E.pivot(string=self._description)
+
+    @api.model
+    def _get_default_calendar_view(self):
         """ Generates a default calendar view by trying to infer
         calendar fields from a number of pre-set attribute names
 
-        :param cr: database cursor
-        :param int user: user id
-        :param dict context: connection context
         :returns: a calendar view
         :rtype: etree._Element
         """
         def set_first_of(seq, in_, to):
             """Sets the first value of ``seq`` also found in ``in_`` to
-            the ``to`` attribute of the view being closed over.
+            the ``to`` attribute of the ``view`` being closed over.
 
             Returns whether it's found a suitable value (and set it on
             the attribute) or not
@@ -1388,28 +1381,26 @@ class BaseModel(object):
                     return True
             return False
 
-        view = etree.Element('calendar', string=self._description)
-        etree.SubElement(view, 'field', name=self._rec_name_fallback(cr, user, context))
+        view = E.calendar(string=self._description)
+        view.append(E.field(name=self._rec_name_fallback()))
 
-        if self._date_name not in self._columns:
+        if self._date_name not in self._fields:
             date_found = False
             for dt in ['date', 'date_start', 'x_date', 'x_date_start']:
-                if dt in self._columns:
+                if dt in self._fields:
                     self._date_name = dt
-                    date_found = True
                     break
-
-            if not date_found:
+            else:
                 raise UserError(_("Insufficient fields for Calendar View!"))
         view.set('date_start', self._date_name)
 
         set_first_of(["user_id", "partner_id", "x_user_id", "x_partner_id"],
-                     self._columns, 'color')
+                     self._fields, 'color')
 
         if not set_first_of(["date_stop", "date_end", "x_date_stop", "x_date_end"],
-                            self._columns, 'date_stop'):
+                            self._fields, 'date_stop'):
             if not set_first_of(["date_delay", "planned_hours", "x_date_delay", "x_planned_hours"],
-                                self._columns, 'date_delay'):
+                                self._fields, 'date_delay'):
                 raise UserError(_("Insufficient fields to generate a Calendar View for %s, missing a date_stop or a date_delay") % self._name)
 
         return view
