@@ -1748,10 +1748,10 @@ class BaseModel(object):
         except AttributeError:
             pass
 
-
-    def _read_group_fill_results(self, cr, uid, domain, groupby, remaining_groupbys,
+    @api.model
+    def _read_group_fill_results(self, domain, groupby, remaining_groupbys,
                                  aggregated_fields, count_field,
-                                 read_group_result, read_group_order=None, context=None):
+                                 read_group_result, read_group_order=None):
         """Helper method for filling in empty groups for all possible values of
            the field being grouped by"""
 
@@ -1763,10 +1763,13 @@ class BaseModel(object):
 
         # Grab the list of all groups that should be displayed, including all present groups
         present_group_ids = [x[groupby][0] for x in read_group_result if x[groupby]]
-        all_groups,folded = self._group_by_full[groupby](self, cr, uid, present_group_ids, domain,
-                                                  read_group_order=read_group_order,
-                                                  access_rights_uid=openerp.SUPERUSER_ID,
-                                                  context=context)
+        all_groups, folded = self._group_by_full[groupby](
+            # Beware: present_group_ids do not belong to model self!
+            self.browse(present_group_ids),
+            domain,
+            read_group_order=read_group_order,
+            access_rights_uid=openerp.SUPERUSER_ID,
+        )
 
         result_template = dict.fromkeys(aggregated_fields, False)
         result_template[groupby + '_count'] = 0
@@ -1912,7 +1915,8 @@ class BaseModel(object):
             'qualified_field': qualified_field
         }
 
-    def _read_group_prepare_data(self, key, value, groupby_dict, context):
+    @api.model
+    def _read_group_prepare_data(self, key, value, groupby_dict):
         """
             Helper method to sanitize the data received by read_group. The None
             values are converted to False, and the date/datetime are formatted,
@@ -1925,10 +1929,11 @@ class BaseModel(object):
                 dt_format = DEFAULT_SERVER_DATETIME_FORMAT if gb['type'] == 'datetime' else DEFAULT_SERVER_DATE_FORMAT
                 value = datetime.datetime.strptime(value, dt_format)
             if gb['tz_convert']:
-                value =  pytz.timezone(context['tz']).localize(value)
+                value = pytz.timezone(self._context['tz']).localize(value)
         return value
 
-    def _read_group_format_result(self, data, annotated_groupbys, groupby, domain, context):
+    @api.model
+    def _read_group_format_result(self, data, annotated_groupbys, groupby, domain):
         """
             Helper method to format the data contained in the dictionary data by 
             adding the domain corresponding to its values, the groupbys in the 
@@ -1951,7 +1956,7 @@ class BaseModel(object):
                 if ftype == 'many2one':
                     value = value[0]
                 elif ftype in ('date', 'datetime'):
-                    locale = context.get('lang', 'en_US')
+                    locale = self._context.get('lang', 'en_US')
                     fmt = DEFAULT_SERVER_DATETIME_FORMAT if ftype == 'datetime' else DEFAULT_SERVER_DATE_FORMAT
                     tzinfo = None
                     range_start = value
@@ -1995,12 +2000,11 @@ class BaseModel(object):
         del data['id']
         return data
 
-    def read_group(self, cr, uid, domain, fields, groupby, offset=0, limit=None, context=None, orderby=False, lazy=True):
+    @api.model
+    def read_group(self, domain, fields, groupby, offset=0, limit=None, orderby=False, lazy=True):
         """
         Get the list of records in list view grouped by the given ``groupby`` fields
 
-        :param cr: database cursor
-        :param uid: current user id
         :param domain: list specifying search criteria [['field_name', 'operator', 'value'], ...]
         :param list fields: list of fields present in the list view specified on the object
         :param list groupby: list of groupby descriptions by which the records will be grouped.  
@@ -2010,7 +2014,6 @@ class BaseModel(object):
                 date/datetime fields.
         :param int offset: optional number of records to skip
         :param int limit: optional max number of records to return
-        :param dict context: context arguments, like lang, time zone. 
         :param list orderby: optional ``order by`` specification, for
                              overriding the natural sort ordering of the
                              groups, see also :py:meth:`~osv.osv.osv.search`
@@ -2027,9 +2030,7 @@ class BaseModel(object):
         :raise AccessError: * if user has no read rights on the requested object
                             * if user tries to bypass access rules for read on the requested object
         """
-        if context is None:
-            context = context
-        result = self._read_group_raw(cr, uid, domain, fields, groupby, offset=offset, limit=limit, context=context, orderby=orderby, lazy=lazy)
+        result = self._read_group_raw(domain, fields, groupby, offset=offset, limit=limit, orderby=orderby, lazy=lazy)
 
         groupby = [groupby] if isinstance(groupby, basestring) else groupby
         dt = [
@@ -2049,27 +2050,24 @@ class BaseModel(object):
                     group[df] = group[df][1]
         return result
 
-    def _read_group_raw(self, cr, uid, domain, fields, groupby, offset=0, limit=None, context=None, orderby=False, lazy=True):
-        if context is None:
-            context = {}
-        self.check_access_rights(cr, uid, 'read')
-        query = self._where_calc(cr, uid, domain, context=context) 
+    @api.model
+    def _read_group_raw(self, domain, fields, groupby, offset=0, limit=None, orderby=False, lazy=True):
+        self.check_access_rights('read')
+        query = self._where_calc(domain)
         fields = fields or self._columns.keys()
 
         groupby = [groupby] if isinstance(groupby, basestring) else groupby
         groupby_list = groupby[:1] if lazy else groupby
-        annotated_groupbys = [
-            self._read_group_process_groupby(cr, uid, gb, query, context=context)
-            for gb in groupby_list
-        ]
+        annotated_groupbys = [self._read_group_process_groupby(gb, query) for gb in groupby_list]
         groupby_fields = [g['field'] for g in annotated_groupbys]
         order = orderby or ','.join([g for g in groupby_list])
         groupby_dict = {gb['groupby']: gb for gb in annotated_groupbys}
 
-        self._apply_ir_rules(cr, uid, query, 'read', context=context)
+        self._apply_ir_rules(query, 'read')
         for gb in groupby_fields:
             assert gb in fields, "Fields in 'groupby' must appear in the list of fields to read (perhaps it's missing in the list view?)"
-            groupby_def = self._columns.get(gb) or (self._inherit_fields.get(gb) and self._inherit_fields.get(gb)[2])
+            assert gb in self._fields, "Unknown field %r in 'groupby'" % gb
+            groupby_def = self._fields[gb].base_field.column
             assert groupby_def and groupby_def._classic_write, "Fields in 'groupby' must be regular database-persisted fields (no function or related fields), or function fields with store=True"
             if not (gb in self._fields):
                 # Don't allow arbitrary values, as this would be a SQL injection vector!
@@ -2086,7 +2084,7 @@ class BaseModel(object):
 
         field_formatter = lambda f: (
             self._fields[f].group_operator or 'sum',
-            self._inherits_join_calc(cr, uid, self._table, f, query, context=context),
+            self._inherits_join_calc(self._table, f, query),
             f,
         )
         select_terms = ['%s(%s) AS "%s" ' % field_formatter(f) for f in aggregated_fields]
@@ -2094,9 +2092,9 @@ class BaseModel(object):
         for gb in annotated_groupbys:
             select_terms.append('%s as "%s" ' % (gb['qualified_field'], gb['groupby']))
 
-        groupby_terms, orderby_terms = self._read_group_prepare(cr, uid, order, aggregated_fields, annotated_groupbys, query, context=context)
+        groupby_terms, orderby_terms = self._read_group_prepare(order, aggregated_fields, annotated_groupbys, query)
         from_clause, where_clause, where_clause_params = query.get_sql()
-        if lazy and (len(groupby_fields) >= 2 or not context.get('group_by_no_leaf')):
+        if lazy and (len(groupby_fields) >= 2 or not self._context.get('group_by_no_leaf')):
             count_field = groupby_fields[0] if len(groupby_fields) >= 1 else '_'
         else:
             count_field = '_'
@@ -2124,8 +2122,8 @@ class BaseModel(object):
             'limit': prefix_term('LIMIT', int(limit) if limit else None),
             'offset': prefix_term('OFFSET', int(offset) if limit else None),
         }
-        cr.execute(query, where_clause_params)
-        fetched_data = cr.dictfetchall()
+        self._cr.execute(query, where_clause_params)
+        fetched_data = self._cr.dictfetchall()
 
         if not groupby_fields:
             return fetched_data
@@ -2134,20 +2132,21 @@ class BaseModel(object):
         if many2onefields:
             data_ids = [r['id'] for r in fetched_data]
             many2onefields = list(set(many2onefields))
-            data_dict = {d['id']: d for d in self.read(cr, uid, data_ids, many2onefields, context=context)} 
+            data_dict = {d['id']: d for d in self.browse(data_ids).read(many2onefields)}
             for d in fetched_data:
                 d.update(data_dict[d['id']])
 
-        data = map(lambda r: {k: self._read_group_prepare_data(k,v, groupby_dict, context) for k,v in r.iteritems()}, fetched_data)
-        result = [self._read_group_format_result(d, annotated_groupbys, groupby, domain, context) for d in data]
+        data = map(lambda r: {k: self._read_group_prepare_data(k,v, groupby_dict) for k,v in r.iteritems()}, fetched_data)
+        result = [self._read_group_format_result(d, annotated_groupbys, groupby, domain) for d in data]
         if lazy and groupby_fields[0] in self._group_by_full:
             # Right now, read_group only fill results in lazy mode (by default).
             # If you need to have the empty groups in 'eager' mode, then the
             # method _read_group_fill_results need to be completely reimplemented
             # in a sane way 
-            result = self._read_group_fill_results(cr, uid, domain, groupby_fields[0], groupby[len(annotated_groupbys):],
-                                                       aggregated_fields, count_field, result, read_group_order=order,
-                                                       context=context)
+            result = self._read_group_fill_results(
+                domain, groupby_fields[0], groupby[len(annotated_groupbys):],
+                aggregated_fields, count_field, result, read_group_order=order,
+            )
         return result
 
     def _inherits_join_add(self, current_model, parent_model_name, query):
