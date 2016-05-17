@@ -1272,15 +1272,12 @@ class BaseModel(object):
 
         return defaults
 
-    def fields_get_keys(self, cr, user, context=None):
-        res = self._columns.keys()
-        # TODO I believe this loop can be replace by
-        # res.extend(self._inherit_fields.key())
-        for parent in self._inherits:
-            res.extend(self.pool[parent].fields_get_keys(cr, user, context))
-        return res
+    @api.model
+    def fields_get_keys(self):
+        return list(self._fields)
 
-    def _rec_name_fallback(self, cr, uid, context=None):
+    @api.model
+    def _rec_name_fallback(self):
         # if self._rec_name is set, it belongs to self._fields
         return self._rec_name or 'id'
 
