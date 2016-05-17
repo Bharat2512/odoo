@@ -1434,7 +1434,8 @@ class BaseModel(object):
 
         return result
 
-    def fields_view_get(self, cr, uid, view_id=None, view_type='form', context=None, toolbar=False, submenu=False):
+    @api.model
+    def fields_view_get(self, view_id=None, view_type='form', toolbar=False, submenu=False):
         """ fields_view_get([view_id | view_type='form'])
 
         Get the detailed composition of the requested view like fields, model, view architecture
@@ -1449,9 +1450,7 @@ class BaseModel(object):
                             * if some tag other than 'position' is found in parent view
         :raise Invalid ArchitectureError: if there is view type other than form, tree, calendar, search etc defined on the structure
         """
-        if context is None:
-            context = {}
-        View = self.pool['ir.ui.view']
+        View = self.env['ir.ui.view']
 
         result = {
             'model': self._name,
@@ -1462,12 +1461,13 @@ class BaseModel(object):
         if not view_id:
             # <view_type>_view_ref in context can be used to overrride the default view
             view_ref_key = view_type + '_view_ref'
-            view_ref = context.get(view_ref_key)
+            view_ref = self._context.get(view_ref_key)
             if view_ref:
                 if '.' in view_ref:
                     module, view_ref = view_ref.split('.', 1)
-                    cr.execute("SELECT res_id FROM ir_model_data WHERE model='ir.ui.view' AND module=%s AND name=%s", (module, view_ref))
-                    view_ref_res = cr.fetchone()
+                    query = "SELECT res_id FROM ir_model_data WHERE model='ir.ui.view' AND module=%s AND name=%s"
+                    self._cr.execute(query, (module, view_ref))
+                    view_ref_res = self._cr.fetchone()
                     if view_ref_res:
                         view_id = view_ref_res[0]
                 else:
@@ -1477,26 +1477,24 @@ class BaseModel(object):
 
             if not view_id:
                 # otherwise try to find the lowest priority matching ir.ui.view
-                view_id = View.default_view(cr, uid, self._name, view_type, context=context)
+                view_id = View.default_view(self._name, view_type)
 
         # context for post-processing might be overriden
-        ctx = context
         if view_id:
             # read the view with inherited views applied
-            root_view = View.read_combined(cr, uid, view_id, fields=['id', 'name', 'field_parent', 'type', 'model', 'arch'], context=context)
+            root_view = View.browse(view_id).read_combined(['id', 'name', 'field_parent', 'type', 'model', 'arch'])
             result['arch'] = root_view['arch']
             result['name'] = root_view['name']
             result['type'] = root_view['type']
             result['view_id'] = root_view['id']
             result['field_parent'] = root_view['field_parent']
             # override context from postprocessing
-            if root_view.get('model') != self._name:
-                ctx = dict(context, base_model_name=root_view.get('model'))
+            if root_view['model'] != self._name:
+                View = View.with_context(base_model_name=root_view['model'])
         else:
             # fallback on default views methods if no ir.ui.view could be found
             try:
-                get_func = getattr(self, '_get_default_%s_view' % view_type)
-                arch_etree = get_func(cr, uid, context)
+                arch_etree = getattr(self, '_get_default_%s_view' % view_type)()
                 result['arch'] = etree.tostring(arch_etree, encoding='utf-8')
                 result['type'] = view_type
                 result['name'] = 'default'
@@ -1504,7 +1502,7 @@ class BaseModel(object):
                 raise UserError(_("No default view of type '%s' could be found !") % view_type)
 
         # Apply post processing, groups and modifiers etc...
-        xarch, xfields = View.postprocess_and_fields(cr, uid, self._name, etree.fromstring(result['arch']), view_id, context=ctx)
+        xarch, xfields = View.postprocess_and_fields(self._name, etree.fromstring(result['arch']), view_id)
         result['arch'] = xarch
         result['fields'] = xfields
 
@@ -1516,14 +1514,19 @@ class BaseModel(object):
                 for key in toclean:
                     x.pop(key, None)
                 return x
-            ir_values_obj = self.pool.get('ir.values')
-            resprint = ir_values_obj.get_actions(cr, uid, 'client_print_multi', self._name, context=context)
-            resaction = ir_values_obj.get_actions(cr, uid, 'client_action_multi', self._name, context=context)
-            resrelate = ir_values_obj.get_actions(cr, uid, 'client_action_relate', self._name, context=context)
-            resaction = [clean(action) for action in resaction if view_type == 'tree' or not action[2].get('multi')]
-            resprint = [clean(print_) for print_ in resprint if view_type == 'tree' or not print_[2].get('multi')]
+            IrValues = self.env['ir.values']
+            resprint = IrValues.get_actions('client_print_multi', self._name)
+            resaction = IrValues.get_actions('client_action_multi', self._name)
+            resrelate = IrValues.get_actions('client_action_relate', self._name)
+            resprint = [clean(print_)
+                        for print_ in resprint
+                        if view_type == 'tree' or not print_[2].get('multi')]
+            resaction = [clean(action)
+                         for action in resaction
+                         if view_type == 'tree' or not action[2].get('multi')]
             #When multi="True" set it will display only in More of the list view
-            resrelate = [clean(action) for action in resrelate
+            resrelate = [clean(action)
+                         for action in resrelate
                          if (action[2].get('multi') and view_type == 'tree') or (not action[2].get('multi') and view_type == 'form')]
 
             for x in itertools.chain(resprint, resaction, resrelate):
@@ -1532,7 +1535,7 @@ class BaseModel(object):
             result['toolbar'] = {
                 'print': resprint,
                 'action': resaction,
-                'relate': resrelate
+                'relate': resrelate,
             }
         return result
 
