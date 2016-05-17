@@ -1405,35 +1405,32 @@ class BaseModel(object):
 
         return view
 
-    def load_views(self, cr, uid, views, options=None, context=None):
+    @api.model
+    def load_views(self, views, options=None):
         """ Returns the fields_views of given views, and optionally filters and fields.
 
         :param views: list of [view_id, view_type]
-        :param options.toolbar: true to include contextual actions when loading fields_views
-        :param options.load_filters: true to return the model's filters
-        :param options.action_id: id of the action to get the filters
-        :param options.load_fields: true to load the model's fields
+        :param options['toolbar']: True to include contextual actions when loading fields_views
+        :param options['load_filters']: True to return the model's filters
+        :param options['action_id']: id of the action to get the filters
+        :param options['load_fields']: True to load the model's fields
         :return: dictionary with fields_views, filters and fields
         """
-        if options is None:
-            options = {}
-        if context is None:
-            context = {}
+        options = options or {}
         result = {}
 
         toolbar = options.get('toolbar')
         result['fields_views'] = {
-            v_type: self.fields_view_get(cr, uid, v_id, v_type if v_type != 'list' else 'tree',
-                                         toolbar=toolbar if v_type != 'search' else False,
-                                         context=context)
+            v_type: self.fields_view_get(v_id, v_type if v_type != 'list' else 'tree',
+                                         toolbar=toolbar if v_type != 'search' else False)
             for [v_id, v_type] in views
         }
 
         if options.get('load_filters'):
-            result['filters'] = self.pool['ir.filters'].get_filters(cr, uid, self._name, options.get('action_id'), context=context)
+            result['filters'] = self.env['ir.filters'].get_filters(self._name, options.get('action_id'))
 
         if options.get('load_fields'):
-            result['fields'] = self.fields_get(cr, uid, context=context)
+            result['fields'] = self.fields_get()
 
         return result
 
