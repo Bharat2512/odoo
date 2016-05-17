@@ -1573,10 +1573,6 @@ class BaseModel(object):
         """
         return self[0].get_formview_action()
 
-    def _view_look_dom_arch(self, cr, uid, node, view_id, context=None):
-        return self.pool['ir.ui.view'].postprocess_and_fields(
-            cr, uid, self._name, node, view_id, context=context)
-
     def search_count(self, cr, user, args, context=None):
         """ search_count(args) -> int
 
