@@ -1573,21 +1573,21 @@ class BaseModel(object):
         """
         return self[0].get_formview_action()
 
-    def search_count(self, cr, user, args, context=None):
+    @api.model
+    def search_count(self, args):
         """ search_count(args) -> int
 
         Returns the number of records in the current model matching :ref:`the
         provided domain <reference/orm/domains>`.
         """
-        res = self.search(cr, user, args, context=context, count=True)
-        if isinstance(res, list):
-            return len(res)
-        return res
+        res = self.search(args, count=True)
+        return res if isinstance(res, (int, long)) else len(res)
 
+    @api.model
     @api.returns('self',
         upgrade=lambda self, value, args, offset=0, limit=None, order=None, count=False: value if count else self.browse(value),
         downgrade=lambda self, value, args, offset=0, limit=None, order=None, count=False: value if count else value.ids)
-    def search(self, cr, user, args, offset=0, limit=None, order=None, context=None, count=False):
+    def search(self, args, offset=0, limit=None, order=None, count=False):
         """ search(args[, offset=0][, limit=None][, order=None][, count=False])
 
         Searches for records based on the ``args``
@@ -1603,7 +1603,8 @@ class BaseModel(object):
 
         :raise AccessError: * if user tries to bypass access rules for read on the requested object.
         """
-        return self._search(cr, user, args, offset=offset, limit=limit, order=order, context=context, count=count)
+        res = self._search(args, offset=offset, limit=limit, order=order, count=count)
+        return res if count else self.browse(res)
 
     #
     # display_name, name_get, name_create, name_search
@@ -4778,7 +4779,8 @@ class BaseModel(object):
 
         return order_by_clause and (' ORDER BY %s ' % order_by_clause) or ''
 
-    def _search(self, cr, user, args, offset=0, limit=None, order=None, context=None, count=False, access_rights_uid=None):
+    @api.model
+    def _search(self, args, offset=0, limit=None, order=None, count=False, access_rights_uid=None):
         """
         Private implementation of search() method, allowing specifying the uid to use for the access right check.
         This is useful for example when filling in the selection list for a drop-down and avoiding access rights errors,
@@ -4787,18 +4789,17 @@ class BaseModel(object):
 
         :param access_rights_uid: optional user ID to use when checking access rights
                                   (not for ir.rules, this is only for ir.model.access)
+        :return: a list of record ids or an integer (if count is True)
         """
-        if context is None:
-            context = {}
-        self.check_access_rights(cr, access_rights_uid or user, 'read')
+        self.sudo(access_rights_uid or self._uid).check_access_rights('read')
 
         # For transient models, restrict access to the current user, except for the super-user
-        if self.is_transient() and self._log_access and user != SUPERUSER_ID:
-            args = expression.AND(([('create_uid', '=', user)], args or []))
+        if self.is_transient() and self._log_access and self._uid != SUPERUSER_ID:
+            args = expression.AND(([('create_uid', '=', self._uid)], args or []))
 
-        query = self._where_calc(cr, user, args, context=context)
-        self._apply_ir_rules(cr, user, query, 'read', context=context)
-        order_by = self._generate_order_by(cr, user, order, query, context=context)
+        query = self._where_calc(args)
+        self._apply_ir_rules(query, 'read')
+        order_by = self._generate_order_by(order, query)
         from_clause, where_clause, where_clause_params = query.get_sql()
 
         where_str = where_clause and (" WHERE %s" % where_clause) or ''
@@ -4807,15 +4808,15 @@ class BaseModel(object):
             # Ignore order, limit and offset when just counting, they don't make sense and could
             # hurt performance
             query_str = 'SELECT count(1) FROM ' + from_clause + where_str
-            cr.execute(query_str, where_clause_params)
-            res = cr.fetchone()
+            self._cr.execute(query_str, where_clause_params)
+            res = self._cr.fetchone()
             return res[0]
 
         limit_str = limit and ' limit %d' % limit or ''
         offset_str = offset and ' offset %d' % offset or ''
         query_str = 'SELECT "%s".id FROM ' % self._table + from_clause + where_str + order_by + limit_str + offset_str
-        cr.execute(query_str, where_clause_params)
-        res = cr.fetchall()
+        self._cr.execute(query_str, where_clause_params)
+        res = self._cr.fetchall()
 
         # TDE note: with auto_join, we could have several lines about the same result
         # i.e. a lead with several unread messages; we uniquify the result using
