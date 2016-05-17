@@ -1288,10 +1288,11 @@ class BaseModel(object):
     def view_header_get(self, view_id=None, view_type='form'):
         return False
 
-    def user_has_groups(self, cr, uid, groups, context=None):
-        """Return true if the user is at least member of one of the groups
-           in groups_str. Typically used to resolve ``groups`` attribute
-           in view and model definitions.
+    @api.model
+    def user_has_groups(self, groups):
+        """Return true if the user is member of at least one of the groups in
+            groups. Typically used to resolve ``groups`` attribute in view and
+            model definitions.
 
            :param str groups: comma-separated list of fully-qualified group
                               external IDs, e.g.: ``base.group_user,base.group_system``
@@ -1299,15 +1300,15 @@ class BaseModel(object):
                     given groups
         """
         from openerp.http import request
-        Users = self.pool['res.users']
+        user = self.env.user
         for group_ext_id in groups.split(','):
             group_ext_id = group_ext_id.strip()
             if group_ext_id == 'base.group_no_one':
                 # check: the group_no_one is effective in debug mode only
-                if Users.has_group(cr, uid, group_ext_id) and request and request.debug:
+                if user.has_group(group_ext_id) and request and request.debug:
                     return True
             else:
-                if Users.has_group(cr, uid, group_ext_id):
+                if user.has_group(group_ext_id):
                     return True
         return False
 
