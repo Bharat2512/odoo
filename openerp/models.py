@@ -1539,21 +1539,21 @@ class BaseModel(object):
             }
         return result
 
-    def get_formview_id(self, cr, uid, id, context=None):
-        """ Return an view id to open the document with. This method is meant to be
-            overridden in addons that want to give specific view ids for example.
-
-            :param int id: id of the document to open
+    @api.multi
+    def get_formview_id(self):
+        """ Return an view id to open the document ``self`` with. This method is
+            meant to be overridden in addons that want to give specific view ids
+            for example.
         """
         return False
 
-    def get_formview_action(self, cr, uid, id, context=None):
-        """ Return an action to open the document. This method is meant to be
-            overridden in addons that want to give specific view ids for example.
-
-            :param int id: id of the document to open
+    @api.multi
+    def get_formview_action(self):
+        """ Return an action to open the document ``self``. This method is meant
+            to be overridden in addons that want to give specific view ids for
+            example.
         """
-        view_id = self.get_formview_id(cr, uid, id, context=context)
+        view_id = self.get_formview_id()
         return {
             'type': 'ir.actions.act_window',
             'res_model': self._name,
@@ -1561,18 +1561,17 @@ class BaseModel(object):
             'view_mode': 'form',
             'views': [(view_id, 'form')],
             'target': 'current',
-            'res_id': id,
-            'context': context,
+            'res_id': self.id,
+            'context': dict(self._context),
         }
 
-    def get_access_action(self, cr, uid, ids, context=None):
+    @api.multi
+    def get_access_action(self):
         """ Return an action to open the document. This method is meant to be
         overridden in addons that want to give specific access to the document.
         By default it opens the formview of the document.
-
-        :param int id: id of the document to open
         """
-        return self.get_formview_action(cr, uid, ids[0], context=context)
+        return self[0].get_formview_action()
 
     def _view_look_dom_arch(self, cr, uid, node, view_id, context=None):
         return self.pool['ir.ui.view'].postprocess_and_fields(
