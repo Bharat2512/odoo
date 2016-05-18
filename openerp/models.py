@@ -647,6 +647,7 @@ class BaseModel(object):
         cls._log_access = cls._auto
         cls._inherits = {}
         cls._depends = {}
+        cls._group_by_full = {}
         cls._constraints = {}
         cls._sql_constraints = []
 
@@ -662,6 +663,9 @@ class BaseModel(object):
 
             for mname, fnames in base._depends.iteritems():
                 cls._depends[mname] = cls._depends.get(mname, []) + fnames
+
+            for fname, func in base._group_by_full.iteritems():
+                cls._group_by_full[fname] = api.guess(func)
 
             for cons in base._constraints:
                 # cons may override a constraint with the same function name
