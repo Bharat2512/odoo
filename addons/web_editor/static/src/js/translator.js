@@ -4,7 +4,6 @@ odoo.define('web_editor.translate', function (require) {
 var core = require('web.core');
 var Model = require('web.Model');
 var ajax = require('web.ajax');
-var Class = require('web.Class');
 var Widget = require('web.Widget');
 var base = require('web_editor.base');
 var rte = require('web_editor.rte');
@@ -72,17 +71,21 @@ var RTE_Translate = rte.Class.extend({
 });
 
 var Translate_Modal = editor_widget.Dialog.extend({
-    template: 'web_editor.translator.attributes',
-    init: function (parent, node) {
-        this._super();
+    init: function (p, options, parent, node) {
+        this._super(p, _.extend({}, {
+            title: _t("Translate Attribute"),
+            buttons: [
+                {text:  _t("Close"), classes: "btn-primary o_save_button", close: true, click: this.save}
+            ]
+        }, options || {}));
         this.parent = parent;
         this.$target = $(node);
         this.translation = $(node).data('translation');
     },
     start: function () {
         var self = this;
-        this._super();
-        var $group = this.$el.find('.form-group');
+        var def = this._super.apply(this, arguments);
+        var $group = $("<div/>", {"class": "form-group"}).appendTo(this.$el);
         _.each(this.translation, function (node, attr) {
             var $node = $(node);
             var $label = $('<label class="control-label"></label>').text(attr);
@@ -95,6 +98,7 @@ var Translate_Modal = editor_widget.Dialog.extend({
             });
             $group.append($label).append($input);
         });
+        return def;
     }
 });
 
@@ -109,7 +113,7 @@ var Translate = Widget.extend({
         this.ir_translation = new Model('ir.translation');
         this.lang = lang || base.get_context().lang;
         this.setTarget($target);
-        this._super();
+        this._super.apply(this, arguments);
 
         this.rte = new RTE_Translate(this, this.config);
         this.rte.on('change', this, this.rte_changed);
@@ -211,7 +215,7 @@ var Translate = Widget.extend({
             return;
         }
 
-        new Translate_Modal(event.data, event.target).appendTo('body');
+        new Translate_Modal(null, {}, event.data, event.target).open();
     },
     markTranslatableNodes: function (node) {
         var self = this;
@@ -267,7 +271,7 @@ var Translate = Widget.extend({
     destroy: function () {
         this.cancel();
         this.$el.remove();
-        this._super();
+        this._super.apply(this, arguments);
     },
 
     config: function ($editable) {

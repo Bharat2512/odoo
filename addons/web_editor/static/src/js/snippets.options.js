@@ -1,14 +1,13 @@
 odoo.define('web_editor.snippets.options', function (require) {
     'use strict';
 
-    var Class = require('web.Class');
     var ajax = require('web.ajax');
+    var Class = require('web.Class');
     var core = require('web.core');
     var Dialog = require('web.Dialog');
     var base = require('web_editor.base');
     var editor = require('web_editor.editor');
     var widget = require('web_editor.widget');
-    var animation = require('web_editor.snippets.animation');
 
     var qweb = core.qweb;
     var _t = core._t;
@@ -32,8 +31,8 @@ odoo.define('web_editor.snippets.options', function (require) {
         },
 
         // helper for this.$target.find
-        $: function (selector) {
-            return this.$target(selector);
+        $: function () {
+            return this.$target.find.apply(this.$target, arguments);
         },
 
         _bind_li_menu: function () {
@@ -149,7 +148,7 @@ odoo.define('web_editor.snippets.options', function (require) {
 
             if (type==="click") {
                 this.reset();
-                this.buildingBlock.parent.rte.historyRecordUndo(this.$target);
+                this.buildingBlock.getParent().rte.historyRecordUndo(this.$target);
             }
 
             function filter (k) { return k !== 'oeId' && k !== 'oeModel' && k !== 'oeField' && k !== 'oeXpath' && k !== 'oeSourceId' && k !== 'only';}
@@ -232,52 +231,10 @@ odoo.define('web_editor.snippets.options', function (require) {
     var registry = {};
 
     /* ----- default options ---- */
-
-    // to remove after 9.0 (keep for compatibility without update with -u)
-    registry.media = SnippetOption.extend({
-        start: function () {
-            var self =this;
-            this._super();
-            animation.start(true, this.$target);
-            this.$target.closest(".o_editable").on("content_changed", function () {
-                if (!self.$target.parent().length) {
-                    self.$target.remove();
-                    self.$overlay.remove();
-                }
-            });
-        },
-        edition: function (type, value) {
-            if(type !== "click") return;
-            var self = this;
-            var _editor = new widget.MediaDialog(this.$target.closest('.o_editable'), this.$target[0]);
-            _editor.appendTo(document.body);
-            _editor.on('saved', this, function (item, old) {
-                self.editor.on_blur();
-                self.buildingBlock.make_active(false);
-                if (self.$target.parent().data("oe-field") !== "image") {
-                    setTimeout(function () {
-                        self.buildingBlock.make_active($(item));
-                    },0);
-                }
-                $(item).trigger("content_changed");
-            });
-        },
-        on_focus : function () {
-            var self = this;
-            var $parent = this.$target.parent();
-
-            if ($parent.data("oe-field") === "image" && $parent.hasClass('o_editable')) {
-                this.$overlay.addClass("hidden");
-                self.edition('click', null);
-                self.buildingBlock.make_active(false);
-            }
-        }
-    });
-
     registry.colorpicker = SnippetOption.extend({
         start: function () {
             var self = this;
-            var res = this._super();
+            var res = this._super.apply(this, arguments);
 
             if (!this.$el.find('.colorpicker').length) {
                 var $pt = $(qweb.render('web_editor.snippet.option.colorpicker'));
@@ -366,7 +323,7 @@ odoo.define('web_editor.snippets.options', function (require) {
     registry.background = SnippetOption.extend({
         start: function ($change_target) {
             this.$target = $change_target || this.$target;
-            this._super();
+            this._super.apply(this, arguments);
             var src = this.$target.css("background-image").replace(/url\(['"]*|['"]*\)|^none$/g, "");
             if (this.$target.hasClass('oe_custom_bg')) {
                 this.$el.find('li[data-choose_image]').data("background", src).attr("data-background", src);
@@ -383,7 +340,7 @@ odoo.define('web_editor.snippets.options', function (require) {
         },
         select_class : function (type, value, $li) {
             this.background(type, '', $li);
-            this._super(type, value, $li);
+            this._super.apply(this, arguments);
         },
         choose_image: function (type, value, $li) {
             if(type !== "click") return;
@@ -393,8 +350,7 @@ odoo.define('web_editor.snippets.options', function (require) {
             $image.attr("src", value);
             $image.appendTo(self.$target);
 
-            var _editor = new widget.MediaDialog(null, $image[0]);
-            _editor.appendTo(document.body);
+            var _editor = new widget.MediaDialog(null, {}, null, $image[0]).open();
             _editor.$('[href="#editor-media-video"], [href="#editor-media-icon"]').addClass('hidden');
 
             _editor.on('saved', self, function () {
@@ -411,9 +367,8 @@ odoo.define('web_editor.snippets.options', function (require) {
             });
         },
         set_active: function () {
-            var self = this;
             var src = this.$target.css("background-image").replace(/url\(['"]*|['"]*\)|^none$/g, "");
-            this._super();
+            this._super.apply(this, arguments);
 
             if (this.$target.hasClass('oe_custom_bg')) {
                 this.$el.find('li[data-choose_image]').data("background", src).attr("data-background", src);
@@ -438,14 +393,12 @@ odoo.define('web_editor.snippets.options', function (require) {
 
     registry.background_position = SnippetOption.extend({
         start: function () {
+            this._super.apply(this, arguments);
+
             var self = this;
             var $btn = this.$overlay.find('.oe_options');
             $btn.on('show.bs.dropdown', function () {
-                if (self.$target.css('background-image') === 'none') {
-                    $btn.find('.background_position_li').addClass('hidden');
-                } else {
-                    $btn.find('.background_position_li').removeClass('hidden');
-                }
+                $btn.find('.background_position_li').toggleClass('hidden', self.$target.css('background-image') === 'none');
             });
         },
         background_position: function (type, value, $li) {
@@ -654,7 +607,7 @@ odoo.define('web_editor.snippets.options', function (require) {
         on_focus: function () {
             this.$target.attr('contentEditable', 'false');
             this.clear();
-            this._super();
+            this._super.apply(this, arguments);
         },
 
         clear: function () {
@@ -716,7 +669,7 @@ odoo.define('web_editor.snippets.options', function (require) {
             this.ID = +$(li).data("id");
             this.$target.attr('data-oe-many2one-id', this.ID).data('oe-many2one-id', this.ID);
 
-            this.buildingBlock.parent.rte.historyRecordUndo(this.$target);
+            this.buildingBlock.getParent().rte.historyRecordUndo(this.$target);
             this.$target.trigger('content_changed');
 
             if (self.$target.data('oe-type') === "contact") {
