@@ -1702,39 +1702,39 @@ class BaseModel(object):
         recs = self.browse(ids)
         return recs.sudo(access_rights_uid).name_get()
 
-    def _add_missing_default_values(self, cr, uid, values, context=None):
+    @api.model
+    def _add_missing_default_values(self, values):
         # avoid overriding inherited values when parent is set
-        avoid_tables = []
-        for tables, parent_field in self._inherits.items():
-            if parent_field in values:
-                avoid_tables.append(tables)
+        avoid_models = {
+            parent_model
+            for parent_model, parent_field in self._inherits.iteritems()
+            if parent_field in values
+        }
 
         # compute missing fields
-        missing_defaults = set()
-        for field in self._columns.keys():
-            if not field in values:
-                missing_defaults.add(field)
-        for field in self._inherit_fields.keys():
-            if (field not in values) and (self._inherit_fields[field][0] not in avoid_tables):
-                missing_defaults.add(field)
-        # discard magic fields
-        missing_defaults -= set(MAGIC_COLUMNS)
+        missing_defaults = {
+            name
+            for name, field in self._fields.iteritems()
+            if name not in values
+            if name not in MAGIC_COLUMNS
+            if field.base_field.column
+            if not (field.inherited and field.related_field.model_name in avoid_models)
+        }
 
-        if missing_defaults:
-            # override defaults with the provided values, never allow the other way around
-            defaults = self.default_get(cr, uid, list(missing_defaults), context)
-            for dv in defaults:
-                if ((dv in self._columns and self._columns[dv]._type == 'many2many') \
-                     or (dv in self._inherit_fields and self._inherit_fields[dv][2]._type == 'many2many')) \
-                        and defaults[dv] and isinstance(defaults[dv][0], (int, long)):
-                    defaults[dv] = [(6, 0, defaults[dv])]
-                if (dv in self._columns and self._columns[dv]._type == 'one2many' \
-                    or (dv in self._inherit_fields and self._inherit_fields[dv][2]._type == 'one2many')) \
-                        and isinstance(defaults[dv], (list, tuple)) and defaults[dv] and isinstance(defaults[dv][0], dict):
-                    defaults[dv] = [(0, 0, x) for x in defaults[dv]]
-            defaults.update(values)
-            values = defaults
-        return values
+        if not missing_defaults:
+            return values
+
+        # override defaults with the provided values, never allow the other way around
+        defaults = self.default_get(list(missing_defaults))
+        for name, value in defaults.iteritems():
+            if self._fields[name].type == 'many2many' and value and isinstance(value[0], (int, long)):
+                # convert a list of ids into a list of commands
+                defaults[name] = [(6, 0, value)]
+            elif self._fields[name].type == 'one2many' and value and isinstance(value[0], dict):
+                # convert a list of dicts into a list of commands
+                defaults[name] = [(0, 0, x) for x in value]
+        defaults.update(values)
+        return defaults
 
     def clear_caches(self):
         """ Clear the caches
