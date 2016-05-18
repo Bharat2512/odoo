@@ -125,6 +125,8 @@ var FieldChar = common.AbstractField.extend(common.ReinitializeFieldMixin, {
     init: function (field_manager, node) {
         this._super(field_manager, node);
         this.password = this.node.attrs.password === 'True' || this.node.attrs.password === '1';
+        var trim = this.node.attrs.trim;
+        this.trim = !(trim && (trim === 'False' || trim === '0'));
     },
     initialize_content: function() {
         if(!this.get('effective_readonly') && !this.$input) {
@@ -137,7 +139,11 @@ var FieldChar = common.AbstractField.extend(common.ReinitializeFieldMixin, {
     },
     store_dom_value: function () {
         if (this.$input && this.is_syntax_valid()) {
-            this.internal_set_value(this.parse_value(this.$input.val()));
+            var value = this.$input.val();
+            if (this.trim) {
+                value = value.trim();
+            }
+            this.internal_set_value(this.parse_value(value));
         }
     },
     commit_value: function () {

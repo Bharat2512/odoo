@@ -21,8 +21,8 @@
                     <page string="Sequence">
                         <group>
                           <group>
-                            <field name="prefix"/>
-                            <field name="suffix"/>
+                            <field name="prefix" trim="False"/>
+                            <field name="suffix" trim="False"/>
                             <field name="use_date_range"/>
                           </group>
                           <group>

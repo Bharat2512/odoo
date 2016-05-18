@@ -431,6 +431,9 @@ system. Available semantic components are:
   ``password``
     indicates that a :class:`~openerp.fields.Char` field stores a password and
     that its data shouldn't be displayed
+  ``trim`` (default)
+    indicates that a :class:`~openerp.fields.Char` field will be saved without whitespace
+    from the beginning and end of a string (default ).
 
 .. todo:: classes for forms
 

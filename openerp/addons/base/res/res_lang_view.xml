@@ -41,8 +41,8 @@
                             <group>
                                 <field name="direction"/>
                                 <field name="grouping"/>
-                                <field name="decimal_point"/>
-                                <field name="thousands_sep"/>
+                                <field name="decimal_point" trim="False"/>
+                                <field name="thousands_sep" trim="False"/>
                                 <field name="date_format"/>
                                 <field name="time_format"/>
                             </group>
