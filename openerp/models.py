@@ -2195,31 +2195,33 @@ class BaseModel(object):
         else:
             return '"%s"."%s"' % (alias, fname)
 
-    def _parent_store_compute(self, cr):
+    @api.model_cr
+    def _parent_store_compute(self):
         if not self._parent_store:
             return
+
         _logger.info('Computing parent left and right for table %s...', self._table)
-        def browse_rec(root, pos=0):
-            # TODO: set order
-            where = self._parent_name+'='+str(root)
-            if not root:
-                where = self._parent_name+' IS NULL'
-            if self._parent_order:
-                where += ' order by '+self._parent_order
-            cr.execute('SELECT id FROM '+self._table+' WHERE '+where)
-            pos2 = pos + 1
-            for id in cr.fetchall():
-                pos2 = browse_rec(id[0], pos2)
-            cr.execute('update '+self._table+' set parent_left=%s, parent_right=%s where id=%s', (pos, pos2, root))
-            return pos2 + 1
-        query = 'SELECT id FROM '+self._table+' WHERE '+self._parent_name+' IS NULL'
-        if self._parent_order:
-            query += ' order by ' + self._parent_order
+        cr = self._cr
+        select = "SELECT id FROM %s WHERE %s=%%s ORDER BY %s" % \
+                    (self._table, self._parent_name, self._parent_order)
+        update = "UPDATE %s SET parent_left=%%s, parent_right=%%s WHERE id=%%s" % self._table
+
+        def process(root, left):
+            """ Set root.parent_left to ``left``, and return root.parent_right + 1 """
+            cr.execute(select, (root,))
+            right = left + 1
+            for (id,) in cr.fetchall():
+                right = process(id, right)
+            cr.execute(update, (left, right, root))
+            return right + 1
+
+        select0 = "SELECT id FROM %s WHERE %s IS NULL ORDER BY %s" % \
+                    (self._table, self._parent_name, self._parent_order)
+        cr.execute(select0)
         pos = 0
-        cr.execute(query)
-        for (root,) in cr.fetchall():
-            pos = browse_rec(root, pos)
-        self.invalidate_cache(cr, SUPERUSER_ID, ['parent_left', 'parent_right'])
+        for (id,) in cr.fetchall():
+            pos = process(id, pos)
+        self.invalidate_cache(['parent_left', 'parent_right'])
         return True
 
     def _update_store(self, cr, f, k):
@@ -3140,6 +3142,10 @@ class BaseModel(object):
         elif 'x_name' in cls._fields:
             cls._rec_name = 'x_name'
 
+        # make sure parent_order is set when necessary
+        if cls._parent_store and not cls._parent_order:
+            cls._parent_order = cls._order
+
     def fields_get(self, cr, user, allfields=None, context=None, write_access=True, attributes=None):
         """ fields_get([fields][, attributes])
 
@@ -3922,7 +3928,6 @@ class BaseModel(object):
         recs.modified(modified_fields)
 
         parents_changed = []
-        parent_order = self._parent_order or self._order
         if self._parent_store and (self._parent_name in vals) and not context.get('defer_parent_store_computation'):
             # The parent_left/right computation may take up to
             # 5 seconds. No need to recompute the values if the
@@ -3932,11 +3937,11 @@ class BaseModel(object):
             parent_val = vals[self._parent_name]
             if parent_val:
                 query = "SELECT id FROM %s WHERE id IN %%s AND (%s != %%s OR %s IS NULL) ORDER BY %s" % \
-                                (self._table, self._parent_name, self._parent_name, parent_order)
+                                (self._table, self._parent_name, self._parent_name, self._parent_order)
                 cr.execute(query, (tuple(ids), parent_val))
             else:
                 query = "SELECT id FROM %s WHERE id IN %%s AND (%s IS NOT NULL) ORDER BY %s" % \
-                                (self._table, self._parent_name, parent_order)
+                                (self._table, self._parent_name, self._parent_order)
                 cr.execute(query, (tuple(ids),))
             parents_changed = map(operator.itemgetter(0), cr.fetchall())
 
@@ -4056,7 +4061,6 @@ class BaseModel(object):
             if self.pool._init:
                 self.pool._init_parent[self._name] = True
             else:
-                order = self._parent_order or self._order
                 parent_val = vals[self._parent_name]
                 if parent_val:
                     clause, params = '%s=%%s' % (self._parent_name,), (parent_val,)
@@ -4072,7 +4076,7 @@ class BaseModel(object):
                     # this can _not_ be fetched outside the loop, as it needs to be refreshed
                     # after each update, in case several nodes are sequentially inserted one
                     # next to the other (i.e computed incrementally)
-                    cr.execute('SELECT parent_right, id FROM %s WHERE %s ORDER BY %s' % (self._table, clause, parent_order), params)
+                    cr.execute('SELECT parent_right, id FROM %s WHERE %s ORDER BY %s' % (self._table, clause, self._parent_order), params)
                     parents = cr.fetchall()
 
                     # Find Position of the element
@@ -4337,7 +4341,7 @@ class BaseModel(object):
             else:
                 parent = vals.get(self._parent_name, False)
                 if parent:
-                    cr.execute('select parent_right from '+self._table+' where '+self._parent_name+'=%s order by '+(self._parent_order or self._order), (parent,))
+                    cr.execute('select parent_right from '+self._table+' where '+self._parent_name+'=%s order by '+self._parent_order, (parent,))
                     pleft_old = None
                     result_p = cr.fetchall()
                     for (pleft,) in result_p:
