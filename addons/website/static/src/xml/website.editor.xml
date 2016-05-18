@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates id="template" xml:space="preserve">
-
     <t t-extend="web_editor.dialog.link">
         <t t-jquery=".list-group-item.form-group">
             this.removeClass('active');
@@ -17,4 +16,18 @@
         </t>
     </t>
 
+    <div t-name="website.homepage_editor_welcome_message" class="container o_homepage_editor_welcome_message">
+        <div class="row">
+            <div class="col-md-4">
+                <span class="fa fa-smile-o"/>
+            </div>
+            <div class="col-md-8">
+                <h1>Welcome to Odoo !</h1>
+                <p>
+                    Let's start by designing this homepage.<br/>
+                    Follow the signs <span class="fa fa-question-circle"/> to start.
+                </p>
+            </div>
+        </div>
+    </div>
 </templates>

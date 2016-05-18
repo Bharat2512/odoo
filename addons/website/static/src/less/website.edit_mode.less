@@ -40,6 +40,23 @@
     }
 }
 
+.o_homepage_editor_welcome_message {
+    font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 3em;
+
+    .fa-smile-o {
+        color: @odoo-brand-primary;
+        font-size: 7em;
+    }
+
+    > .row {
+        .o-flex-display();
+        .o-flex-flow(row, nowrap);
+        .o-justify-content(center);
+        .o-align-items(center);
+    }
+}
+
 .o_editable {
     &:not(:empty), &[data-oe-type] {
         &:not([data-oe-model="ir.ui.view"]):not([data-oe-type="html"]):hover {
