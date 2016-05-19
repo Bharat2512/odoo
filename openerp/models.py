@@ -3613,47 +3613,49 @@ class BaseModel(object):
                     returned_ids = [x[0] for x in self._cr.fetchall()]
                     self.browse(sub_ids)._check_record_rules_result_count(returned_ids, operation)
 
-    def create_workflow(self, cr, uid, ids, context=None):
-        """Create a workflow instance for each given record IDs."""
+    @api.multi
+    def create_workflow(self):
+        """ Create a workflow instance for the given records. """
         from openerp import workflow
-        for res_id in ids:
-            workflow.trg_create(uid, self._name, res_id, cr)
-        # self.invalidate_cache(cr, uid, context=context) ?
+        for res_id in self.ids:
+            workflow.trg_create(self._uid, self._name, res_id, self._cr)
         return True
 
-    def delete_workflow(self, cr, uid, ids, context=None):
-        """Delete the workflow instances bound to the given record IDs."""
+    @api.multi
+    def delete_workflow(self):
+        """ Delete the workflow instances bound to the given records. """
         from openerp import workflow
-        for res_id in ids:
-            workflow.trg_delete(uid, self._name, res_id, cr)
-        self.invalidate_cache(cr, uid, context=context)
+        for res_id in self.ids:
+            workflow.trg_delete(self._uid, self._name, res_id, self._cr)
+        self.invalidate_cache()
         return True
 
-    def step_workflow(self, cr, uid, ids, context=None):
-        """Reevaluate the workflow instances of the given record IDs."""
+    @api.multi
+    def step_workflow(self):
+        """ Reevaluate the workflow instances of the given records. """
         from openerp import workflow
-        for res_id in ids:
-            workflow.trg_write(uid, self._name, res_id, cr)
-        # self.invalidate_cache(cr, uid, context=context) ?
+        for res_id in self.ids:
+            workflow.trg_write(self._uid, self._name, res_id, self._cr)
         return True
 
-    def signal_workflow(self, cr, uid, ids, signal, context=None):
-        """Send given workflow signal and return a dict mapping ids to workflow results"""
+    @api.multi
+    def signal_workflow(self, signal):
+        """ Send the workflow signal, and return a dict mapping ids to workflow results. """
         from openerp import workflow
         result = {}
-        for res_id in ids:
-            result[res_id] = workflow.trg_validate(uid, self._name, res_id, signal, cr)
-        # self.invalidate_cache(cr, uid, context=context) ?
+        for res_id in self.ids:
+            result[res_id] = workflow.trg_validate(self._uid, self._name, res_id, signal, self._cr)
         return result
 
-    def redirect_workflow(self, cr, uid, old_new_ids, context=None):
+    @api.model
+    def redirect_workflow(self, old_new_ids):
         """ Rebind the workflow instance bound to the given 'old' record IDs to
             the given 'new' IDs. (``old_new_ids`` is a list of pairs ``(old, new)``.
         """
         from openerp import workflow
         for old_id, new_id in old_new_ids:
-            workflow.trg_redirect(uid, self._name, old_id, new_id, cr)
-        self.invalidate_cache(cr, uid, context=context)
+            workflow.trg_redirect(self._uid, self._name, old_id, new_id, self._cr)
+        self.invalidate_cache()
         return True
 
     def unlink(self, cr, uid, ids, context=None):
