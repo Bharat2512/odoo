@@ -2316,11 +2316,13 @@ class BaseModel(object):
     def _drop_constraint(self, source_table, constraint_name):
         self._cr.execute("ALTER TABLE %s DROP CONSTRAINT %s" % (source_table, constraint_name))
 
-    def _save_relation_table(self, cr, relation_table, module):
+    @api.model_cr
+    def _save_relation_table(self, relation_table, module):
         """
         Record the creation of a many2many for this model, to make it possible
         to delete it later when the module is uninstalled.
         """
+        cr = self._cr
         cr.execute("""
             SELECT 1 FROM ir_model_relation, ir_module_module
             WHERE ir_model_relation.module=ir_module_module.id
@@ -2333,7 +2335,7 @@ class BaseModel(object):
                     (SELECT id FROM ir_module_module WHERE name=%s),
                     (SELECT id FROM ir_model WHERE model=%s))""",
                        (relation_table, module, self._name))
-            self.invalidate_cache(cr, SUPERUSER_ID)
+            self.invalidate_cache()
 
     # checked version: for direct m2o starting from ``self``
     def _m2o_add_foreign_key_checked(self, source_field, dest_model, ondelete):
