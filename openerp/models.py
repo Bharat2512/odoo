@@ -2732,114 +2732,132 @@ class BaseModel(object):
         """
         pass
 
-    def _table_exist(self, cr):
-        cr.execute("SELECT relname FROM pg_class WHERE relkind IN ('r','v') AND relname=%s", (self._table,))
-        return cr.rowcount
+    @api.model_cr
+    def _table_exist(self):
+        query = "SELECT relname FROM pg_class WHERE relkind IN ('r','v') AND relname=%s"
+        self._cr.execute(query, (self._table,))
+        return self._cr.rowcount
 
-
-    def _create_table(self, cr):
-        cr.execute('CREATE TABLE "%s" (id SERIAL NOT NULL, PRIMARY KEY(id))' % (self._table,))
-        cr.execute(("COMMENT ON TABLE \"%s\" IS %%s" % self._table), (self._description,))
+    @api.model_cr
+    def _create_table(self):
+        self._cr.execute('CREATE TABLE "%s" (id SERIAL NOT NULL, PRIMARY KEY(id))' % (self._table,))
+        self._cr.execute("COMMENT ON TABLE \"%s\" IS %%s" % self._table, (self._description,))
         _schema.debug("Table '%s': created", self._table)
 
+    @api.model_cr
+    def _parent_columns_exist(self):
+        query = """ SELECT c.relname FROM pg_class c, pg_attribute a
+                    WHERE c.relname=%s AND a.attname=%s AND c.oid=a.attrelid """
+        self._cr.execute(query, (self._table, 'parent_left'))
+        return self._cr.rowcount
 
-    def _parent_columns_exist(self, cr):
-        cr.execute("""SELECT c.relname
-            FROM pg_class c, pg_attribute a
-            WHERE c.relname=%s AND a.attname=%s AND c.oid=a.attrelid
-            """, (self._table, 'parent_left'))
-        return cr.rowcount
-
-
-    def _create_parent_columns(self, cr):
-        cr.execute('ALTER TABLE "%s" ADD COLUMN "parent_left" INTEGER' % (self._table,))
-        cr.execute('ALTER TABLE "%s" ADD COLUMN "parent_right" INTEGER' % (self._table,))
+    @api.model_cr
+    def _create_parent_columns(self):
+        self._cr.execute('ALTER TABLE "%s" ADD COLUMN "parent_left" INTEGER' % (self._table,))
+        self._cr.execute('ALTER TABLE "%s" ADD COLUMN "parent_right" INTEGER' % (self._table,))
         if 'parent_left' not in self._columns:
-            _logger.error('create a column parent_left on object %s: fields.integer(\'Left Parent\', select=1)',
-                          self._table)
-            _schema.debug("Table '%s': added column '%s' with definition=%s",
-                self._table, 'parent_left', 'INTEGER')
+            _logger.error('add a field parent_left on model %s: parent_left = fields.Integer(\'Left Parent\', index=True)', self._name)
+            _schema.debug("Table '%s': added column '%s' with definition=%s", self._table, 'parent_left', 'INTEGER')
         elif not self._columns['parent_left'].select:
-            _logger.error('parent_left column on object %s must be indexed! Add select=1 to the field definition)',
-                          self._table)
+            _logger.error('parent_left field on model %s must be indexed! Add index=True to the field definition)', self._name)
         if 'parent_right' not in self._columns:
-            _logger.error('create a column parent_right on object %s: fields.integer(\'Right Parent\', select=1)',
-                          self._table)
-            _schema.debug("Table '%s': added column '%s' with definition=%s",
-                self._table, 'parent_right', 'INTEGER')
+            _logger.error('add a field parent_right on model %s: parent_right = fields.Integer(\'Left Parent\', index=True)', self._name)
+            _schema.debug("Table '%s': added column '%s' with definition=%s", self._table, 'parent_right', 'INTEGER')
         elif not self._columns['parent_right'].select:
-            _logger.error('parent_right column on object %s must be indexed! Add select=1 to the field definition)',
-                          self._table)
+            _logger.error('parent_right field on model %s must be indexed! Add index=True to the field definition)', self._name)
         if self._columns[self._parent_name].ondelete not in ('cascade', 'restrict'):
-            _logger.error("The column %s on object %s must be set as ondelete='cascade' or 'restrict'",
-                          self._parent_name, self._name)
+            _logger.error("The field %s on model %s must be set as ondelete='cascade' or 'restrict'", self._parent_name, self._name)
+        self._cr.commit()
 
-        cr.commit()
-
-
-    def _select_column_data(self, cr):
+    @api.model_cr
+    def _select_column_data(self):
         # attlen is the number of bytes necessary to represent the type when
         # the type has a fixed size. If the type has a varying size attlen is
         # -1 and atttypmod is the size limit + 4, or -1 if there is no limit.
-        cr.execute("SELECT c.relname,a.attname,a.attlen,a.atttypmod,a.attnotnull,a.atthasdef,t.typname,CASE WHEN a.attlen=-1 THEN (CASE WHEN a.atttypmod=-1 THEN 0 ELSE a.atttypmod-4 END) ELSE a.attlen END as size " \
-           "FROM pg_class c,pg_attribute a,pg_type t " \
-           "WHERE c.relname=%s " \
-           "AND c.oid=a.attrelid " \
-           "AND a.atttypid=t.oid", (self._table,))
-        return dict(map(lambda x: (x['attname'], x),cr.dictfetchall()))
+        query = """ SELECT c.relname, a.attname, a.attlen, a.atttypmod, a.attnotnull, a.atthasdef, t.typname,
+                           CASE WHEN a.attlen=-1 THEN (CASE WHEN a.atttypmod=-1 THEN 0 ELSE a.atttypmod-4 END) ELSE a.attlen END as size
+                    FROM pg_class c, pg_attribute a, pg_type t
+                    WHERE c.relname=%s AND c.oid=a.attrelid AND a.atttypid=t.oid """
+        self._cr.execute(query, (self._table,))
+        return {row['attname']: row for row in self._cr.dictfetchall()}
 
-
-    def _o2m_raise_on_missing_reference(self, cr, f):
+    @api.model_cr
+    def _o2m_raise_on_missing_reference(self, column):
         # TODO this check should be a method on fields.one2many.
-        if f._obj in self.pool:
-            other = self.pool[f._obj]
+        if column._obj in self.env:
+            other = self.env[column._obj]
             # TODO the condition could use fields_get_keys().
-            if f._fields_id not in other._columns.keys():
-                if f._fields_id not in other._inherit_fields.keys():
-                    raise UserError(_("There is no reference field '%s' found for '%s'") % (f._fields_id, f._obj))
+            if column._fields_id not in other._fields:
+                raise UserError(_("There is no reference field '%s' found for '%s'") % (f._fields_id, f._obj))
 
-    def _m2m_raise_or_create_relation(self, cr, f):
+    @api.model_cr
+    def _m2m_raise_or_create_relation(self, column):
         """ Create the table for the relation if necessary.
         Return ``True`` if the relation had to be created.
         """
-        m2m_tbl, col1, col2 = f._sql_names(self)
+        cr = self._cr
+        m2m_tbl, col1, col2 = column._sql_names(self)
         # do not create relations for custom fields as they do not belong to a module
         # they will be automatically removed when dropping the corresponding ir.model.field
         # table name for custom relation all starts with x_, see __init__
         if not m2m_tbl.startswith('x_'):
-            self._save_relation_table(cr, m2m_tbl, f._module)
+            self._save_relation_table(m2m_tbl, column._module)
         cr.execute("SELECT relname FROM pg_class WHERE relkind IN ('r','v') AND relname=%s", (m2m_tbl,))
         if not cr.dictfetchall():
-            if f._obj not in self.pool:
-                raise UserError(_('Many2Many destination model does not exist: `%s`') % (f._obj,))
-            dest_model = self.pool[f._obj]
-            ref = dest_model._table
+            if column._obj not in self.env:
+                raise UserError(_('Many2Many destination model does not exist: `%s`') % (column._obj,))
+            dest_model = self.env[column._obj]
             cr.execute('CREATE TABLE "%s" ("%s" INTEGER NOT NULL, "%s" INTEGER NOT NULL, UNIQUE("%s","%s"))' % (m2m_tbl, col1, col2, col1, col2))
             # create foreign key references with ondelete=cascade, unless the targets are SQL views
-            cr.execute("SELECT relkind FROM pg_class WHERE relkind IN ('v') AND relname=%s", (ref,))
+            cr.execute("SELECT relkind FROM pg_class WHERE relkind IN ('v') AND relname=%s", (dest_model._table,))
             if not cr.fetchall():
-                self._m2o_add_foreign_key_unchecked(m2m_tbl, col2, dest_model, 'cascade', f._module)
+                self._m2o_add_foreign_key_unchecked(m2m_tbl, col2, dest_model, 'cascade', column._module)
             cr.execute("SELECT relkind FROM pg_class WHERE relkind IN ('v') AND relname=%s", (self._table,))
             if not cr.fetchall():
-                self._m2o_add_foreign_key_unchecked(m2m_tbl, col1, self, 'cascade', f._module)
+                self._m2o_add_foreign_key_unchecked(m2m_tbl, col1, self, 'cascade', column._module)
 
             cr.execute('CREATE INDEX ON "%s" ("%s")' % (m2m_tbl, col1))
             cr.execute('CREATE INDEX ON "%s" ("%s")' % (m2m_tbl, col2))
-            cr.execute("COMMENT ON TABLE \"%s\" IS 'RELATION BETWEEN %s AND %s'" % (m2m_tbl, self._table, ref))
+            cr.execute("COMMENT ON TABLE \"%s\" IS 'RELATION BETWEEN %s AND %s'" % (m2m_tbl, self._table, dest_model._table))
             cr.commit()
-            _schema.debug("Create table '%s': m2m relation between '%s' and '%s'", m2m_tbl, self._table, ref)
+            _schema.debug("Create table '%s': m2m relation between '%s' and '%s'", m2m_tbl, self._table, dest_model._table)
             return True
 
-
-    def _add_sql_constraints(self, cr):
+    @api.model_cr
+    def _add_sql_constraints(self):
         """
 
         Modify this model's database table constraints so they match the one in
         _sql_constraints.
 
         """
+        cr = self._cr
+
         def unify_cons_text(txt):
             return txt.lower().replace(', ',',').replace(' (','(')
+
+        def drop(name, definition, old_definition):
+            try:
+                cr.execute('ALTER TABLE "%s" DROP CONSTRAINT "%s"' % (self._table, name))
+                cr.commit()
+                _schema.debug("Table '%s': dropped constraint '%s'. Reason: its definition changed from '%s' to '%s'",
+                              self._table, name, old_definition, definition)
+            except Exception:
+                _schema.warning("Table '%s': unable to drop constraint '%s'!", self._table, definition)
+                cr.rollback()
+
+        def add(name, definition):
+            query = 'ALTER TABLE "%s" ADD CONSTRAINT "%s" %s' % (self._table, name, definition)
+            try:
+                cr.execute(query)
+                cr.commit()
+                _schema.debug("Table '%s': added constraint '%s' with definition=%s",
+                              self._table, name, definition)
+            except Exception:
+                _schema.warning("Table '%s': unable to add constraint '%s'!\n"
+                                "If you want to have it, you should update the records and execute manually:\n%s",
+                                self._table, definition, query)
+                cr.rollback()
 
         # map each constraint on the name of the module where it is defined
         constraint_module = {
@@ -2849,7 +2867,7 @@ class BaseModel(object):
             for constraint in getattr(cls, '_local_sql_constraints', ())
         }
 
-        for (key, con, _) in self._sql_constraints:
+        for (key, definition, _) in self._sql_constraints:
             conname = '%s_%s' % (self._table, key)
 
             # using 1 to get result if no imc but one pgc
@@ -2859,60 +2877,25 @@ class BaseModel(object):
                           ON (pgc.conname = imc.name)
                           WHERE pgc.conname=%s
                           """, (conname, ))
-            existing_constraints = cr.dictfetchone()
-            sql_actions = {
-                'drop': {
-                    'execute': False,
-                    'query': 'ALTER TABLE "%s" DROP CONSTRAINT "%s"' % (self._table, conname, ),
-                    'msg_ok': "Table '%s': dropped constraint '%s'. Reason: its definition changed from '%%s' to '%s'" % (
-                        self._table, conname, con),
-                    'msg_err': "Table '%s': unable to drop \'%s\' constraint !" % (self._table, con),
-                    'order': 1,
-                },
-                'add': {
-                    'execute': False,
-                    'query': 'ALTER TABLE "%s" ADD CONSTRAINT "%s" %s' % (self._table, conname, con,),
-                    'msg_ok': "Table '%s': added constraint '%s' with definition=%s" % (self._table, conname, con),
-                    'msg_err': "Table '%s': unable to add \'%s\' constraint !\n If you want to have it, you should update the records and execute manually:\n%%s" % (
-                        self._table, con),
-                    'order': 2,
-                },
-            }
-
-            if not existing_constraints:
-                # constraint does not exists:
-                sql_actions['add']['execute'] = True
-                sql_actions['add']['msg_err'] = sql_actions['add']['msg_err'] % (sql_actions['add']['query'], )
-            elif unify_cons_text(con) != existing_constraints['definition']:
-                # constraint exists but its definition has changed:
-                sql_actions['drop']['execute'] = True
-                sql_actions['drop']['msg_ok'] = sql_actions['drop']['msg_ok'] % (existing_constraints['definition'] or '', )
-                sql_actions['add']['execute'] = True
-                sql_actions['add']['msg_err'] = sql_actions['add']['msg_err'] % (sql_actions['add']['query'], )
+            existing = cr.dictfetchone()
+            if not existing:
+                # constraint does not exists
+                add(conname, definition)
+            elif unify_cons_text(definition) != existing['definition']:
+                # constraint exists but its definition has changed
+                drop(conname, definition, existing['definition'] or '')
+                add(conname, definition)
 
             # we need to add the constraint:
             module = constraint_module.get(key)
-            self._save_constraint(cr, conname, 'u', unify_cons_text(con), module)
-            sql_actions = [item for item in sql_actions.values()]
-            sql_actions.sort(key=lambda x: x['order'])
-            for sql_action in [action for action in sql_actions if action['execute']]:
-                try:
-                    cr.execute(sql_action['query'])
-                    cr.commit()
-                    _schema.debug(sql_action['msg_ok'])
-                except:
-                    _schema.warning(sql_action['msg_err'])
-                    cr.rollback()
+            self._save_constraint(conname, 'u', unify_cons_text(definition), module)
 
-
-    def _execute_sql(self, cr):
+    @api.model_cr
+    def _execute_sql(self):
         """ Execute the SQL code from the _sql attribute (if any)."""
         if hasattr(self, "_sql"):
-            for line in self._sql.split(';'):
-                line2 = line.replace('\n', '').strip()
-                if line2:
-                    cr.execute(line2)
-                    cr.commit()
+            self._cr.execute(self._sql)
+            self._cr.commit()
 
     #
     # Update objects that uses this one to update their _inherits fields
