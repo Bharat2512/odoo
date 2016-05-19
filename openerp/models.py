@@ -3179,21 +3179,22 @@ class BaseModel(object):
         """
         return help
 
-    def check_field_access_rights(self, cr, user, operation, fields, context=None):
+    @api.model
+    def check_field_access_rights(self, operation, fields):
         """
         Check the user access rights on the given fields. This raises Access
         Denied if the user does not have the rights. Otherwise it returns the
         fields (as is if the fields is not falsy, or the readable/writable
         fields if fields is falsy).
         """
-        if user == SUPERUSER_ID:
+        if self._uid == SUPERUSER_ID:
             return fields or list(self._fields)
 
         def valid(fname):
             """ determine whether user has access to field ``fname`` """
             field = self._fields.get(fname)
             if field and field.groups:
-                return self.user_has_groups(cr, user, groups=field.groups, context=context)
+                return self.user_has_groups(field.groups)
             else:
                 return True
 
@@ -3203,10 +3204,10 @@ class BaseModel(object):
             invalid_fields = set(filter(lambda name: not valid(name), fields))
             if invalid_fields:
                 _logger.info('Access Denied by ACLs for operation: %s, uid: %s, model: %s, fields: %s',
-                    operation, user, self._name, ', '.join(invalid_fields))
+                    operation, self._uid, self._name, ', '.join(invalid_fields))
                 raise AccessError(_('The requested operation cannot be completed due to security restrictions. '
-                                        'Please contact your system administrator.\n\n(Document type: %s, Operation: %s)') % \
-                                        (self._description, operation))
+                                    'Please contact your system administrator.\n\n(Document type: %s, Operation: %s)') % \
+                                  (self._description, operation))
 
         return fields
 
