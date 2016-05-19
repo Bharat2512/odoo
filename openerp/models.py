@@ -3135,7 +3135,8 @@ class BaseModel(object):
         if cls._parent_store and not cls._parent_order:
             cls._parent_order = cls._order
 
-    def fields_get(self, cr, user, allfields=None, context=None, write_access=True, attributes=None):
+    @api.model
+    def fields_get(self, allfields=None, attributes=None):
         """ fields_get([fields][, attributes])
 
         Return the definition of each field.
@@ -3147,25 +3148,24 @@ class BaseModel(object):
         :param allfields: list of fields to document, all if empty or not provided
         :param attributes: list of description attributes to return for each field, all if empty or not provided
         """
-        recs = self.browse(cr, user, [], context)
-
-        has_access = functools.partial(recs.check_access_rights, raise_exception=False)
+        has_access = functools.partial(self.check_access_rights, raise_exception=False)
         readonly = not (has_access('write') or has_access('create'))
 
         res = {}
         for fname, field in self._fields.iteritems():
             if allfields and fname not in allfields:
                 continue
-            if field.groups and not recs.user_has_groups(field.groups):
+            if field.groups and not self.user_has_groups(field.groups):
                 continue
 
-            description = field.get_description(recs.env)
+            description = field.get_description(self.env)
             if readonly:
                 description['readonly'] = True
                 description['states'] = {}
             if attributes:
-                description = {k: v for k, v in description.iteritems()
-                               if k in attributes}
+                description = {key: val
+                               for key, val in description.iteritems()
+                               if key in attributes}
             res[fname] = description
 
         return res
