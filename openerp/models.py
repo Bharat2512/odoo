@@ -2251,27 +2251,31 @@ class BaseModel(object):
         field = self._fields[field]
         field.convert_to_cache(value, self)
 
-    def _check_removed_columns(self, cr, log=False):
-        # iterate on the database columns to drop the NOT NULL constraints
-        # of fields which were required but have been removed (or will be added by another module)
-        columns = [c for c in self._columns if not (isinstance(self._columns[c], fields.function) and not self._columns[c].store)]
-        columns += MAGIC_COLUMNS
+    @api.model_cr
+    def _check_removed_columns(self, log=False):
+        # iterate on the database columns to drop the NOT NULL constraints of
+        # fields which were required but have been removed (or will be added by
+        # another module)
+        cr = self._cr
+        cols = [name
+                for name, column in self._columns.iteritems()
+                if not (isinstance(column, fields.function) and not column.store)]
         cr.execute("SELECT a.attname, a.attnotnull"
                    "  FROM pg_class c, pg_attribute a"
                    " WHERE c.relname=%s"
                    "   AND c.oid=a.attrelid"
                    "   AND a.attisdropped=%s"
                    "   AND pg_catalog.format_type(a.atttypid, a.atttypmod) NOT IN ('cid', 'tid', 'oid', 'xid')"
-                   "   AND a.attname NOT IN %s", (self._table, False, tuple(columns))),
+                   "   AND a.attname NOT IN %s", (self._table, False, tuple(cols))),
 
-        for column in cr.dictfetchall():
+        for row in cr.dictfetchall():
             if log:
                 _logger.debug("column %s is in the table %s but not in the corresponding object %s",
-                              column['attname'], self._table, self._name)
-            if column['attnotnull']:
-                cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" DROP NOT NULL' % (self._table, column['attname']))
+                              row['attname'], self._table, self._name)
+            if row['attnotnull']:
+                cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" DROP NOT NULL' % (self._table, row['attname']))
                 _schema.debug("Table '%s': column '%s': dropped NOT NULL constraint",
-                              self._table, column['attname'])
+                              self._table, row['attname'])
 
     def _save_constraint(self, cr, constraint_name, type, definition, module):
         """
