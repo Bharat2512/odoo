@@ -3544,24 +3544,23 @@ class BaseModel(object):
                 # mention the first one only to keep the error message readable
                 raise ValidationError(_('A document was modified since you last viewed it (%s:%d)') % (self._description, res[0]))
 
-    def _check_record_rules_result_count(self, cr, uid, ids, result_ids, operation, context=None):
-        """Verify the returned rows after applying record rules matches
-           the length of ``ids``, and raise an appropriate exception if it does not.
+    @api.multi
+    def _check_record_rules_result_count(self, result_ids, operation):
+        """ Verify the returned rows after applying record rules matches the
+            length of ``self``, and raise an appropriate exception if it does not.
         """
-        if context is None:
-            context = {}
-        ids, result_ids = set(ids), set(result_ids)
+        ids, result_ids = set(self.ids), set(result_ids)
         missing_ids = ids - result_ids
         if missing_ids:
             # Attempt to distinguish record rule restriction vs deleted records,
-            # to provide a more specific error message - check if the missinf
-            cr.execute('SELECT id FROM ' + self._table + ' WHERE id IN %s', (tuple(missing_ids),))
-            forbidden_ids = [x[0] for x in cr.fetchall()]
+            # to provide a more specific error message
+            self._cr.execute('SELECT id FROM %s WHERE id IN %%s' % self._table, (tuple(missing_ids),))
+            forbidden_ids = [x[0] for x in self._cr.fetchall()]
             if forbidden_ids:
                 # the missing ids are (at least partially) hidden by access rules
-                if uid == SUPERUSER_ID:
+                if self._uid == SUPERUSER_ID:
                     return
-                _logger.info('Access Denied by record rules for operation: %s on record ids: %r, uid: %s, model: %s', operation, forbidden_ids, uid, self._name)
+                _logger.info('Access Denied by record rules for operation: %s on record ids: %r, uid: %s, model: %s', operation, forbidden_ids, self._uid, self._name)
                 raise AccessError(_('The requested operation cannot be completed due to security restrictions. Please contact your system administrator.\n\n(Document type: %s, Operation: %s)') % \
                                     (self._description, operation))
             else:
@@ -3571,24 +3570,26 @@ class BaseModel(object):
                     # And no error when reading a record that was deleted, to prevent spurious
                     # errors for non-transactional search/read sequences coming from clients
                     return
-                _logger.info('Failed operation on deleted record(s): %s, uid: %s, model: %s', operation, uid, self._name)
+                _logger.info('Failed operation on deleted record(s): %s, uid: %s, model: %s', operation, self._uid, self._name)
                 raise MissingError(_('Missing document(s)') + ':' + _('One of the documents you are trying to access has been deleted, please try again after refreshing.'))
 
+    @api.model
+    def check_access_rights(self, operation, raise_exception=True):
+        """ Verifies that the operation given by ``operation`` is allowed for
+            the current user according to the access rights.
+        """
+        return self.env['ir.model.access'].check(self._name, operation, raise_exception)
 
-    def check_access_rights(self, cr, uid, operation, raise_exception=True): # no context on purpose.
-        """Verifies that the operation given by ``operation`` is allowed for the user
-           according to the access rights."""
-        return self.pool.get('ir.model.access').check(cr, uid, self._name, operation, raise_exception)
-
-    def check_access_rule(self, cr, uid, ids, operation, context=None):
-        """Verifies that the operation given by ``operation`` is allowed for the user
-           according to ir.rules.
+    @api.multi
+    def check_access_rule(self, operation):
+        """ Verifies that the operation given by ``operation`` is allowed for
+            the current user according to ir.rules.
 
            :param operation: one of ``write``, ``unlink``
            :raise UserError: * if current ir.rules do not permit this operation.
            :return: None if the operation is allowed
         """
-        if uid == SUPERUSER_ID:
+        if self._uid == SUPERUSER_ID:
             return
 
         if self.is_transient():
@@ -3597,22 +3598,20 @@ class BaseModel(object):
             # have log_access enabled so that the create_uid column is always there.
             # And even with _inherits, these fields are always present in the local
             # table too, so no need for JOINs.
-            cr.execute("""SELECT distinct create_uid
-                          FROM %s
-                          WHERE id IN %%s""" % self._table, (tuple(ids),))
-            uids = [x[0] for x in cr.fetchall()]
-            if len(uids) != 1 or uids[0] != uid:
+            query = "SELECT DISTINCT create_uid FROM %s WHERE id IN %%s" % self._table
+            self._cr.execute(query, (tuple(self.ids),))
+            uids = [x[0] for x in self._cr.fetchall()]
+            if len(uids) != 1 or uids[0] != self._uid:
                 raise AccessError(_('For this kind of document, you may only access records you created yourself.\n\n(Document type: %s)') % (self._description,))
         else:
-            where_clause, where_params, tables = self.pool.get('ir.rule').domain_get(cr, uid, self._name, operation, context=context)
+            where_clause, where_params, tables = self.env['ir.rule'].domain_get(self._name, operation)
             if where_clause:
-                where_clause = ' and ' + ' and '.join(where_clause)
-                for sub_ids in cr.split_for_in_conditions(ids):
-                    cr.execute('SELECT ' + self._table + '.id FROM ' + ','.join(tables) +
-                               ' WHERE ' + self._table + '.id IN %s' + where_clause,
-                               [sub_ids] + where_params)
-                    returned_ids = [x['id'] for x in cr.dictfetchall()]
-                    self._check_record_rules_result_count(cr, uid, sub_ids, returned_ids, operation, context=context)
+                query = "SELECT %s.id FROM %s WHERE %s.id IN %%s AND " % (self._table, ",".join(tables), self._table)
+                query = query + " AND ".join(where_clause)
+                for sub_ids in self._cr.split_for_in_conditions(self.ids):
+                    self._cr.execute(query, [sub_ids] + where_params)
+                    returned_ids = [x[0] for x in self._cr.fetchall()]
+                    self.browse(sub_ids)._check_record_rules_result_count(returned_ids, operation)
 
     def create_workflow(self, cr, uid, ids, context=None):
         """Create a workflow instance for each given record IDs."""
