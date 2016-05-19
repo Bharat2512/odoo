@@ -2277,7 +2277,8 @@ class BaseModel(object):
                 _schema.debug("Table '%s': column '%s': dropped NOT NULL constraint",
                               self._table, row['attname'])
 
-    def _save_constraint(self, cr, constraint_name, type, definition, module):
+    @api.model_cr
+    def _save_constraint(self, constraint_name, type, definition, module):
         """
         Record the creation of a constraint for this model, to make it possible
         to delete it later when the module is uninstalled. Type can be either
@@ -2288,6 +2289,7 @@ class BaseModel(object):
             # of any module
             return
         assert type in ('f', 'u')
+        cr = self._cr
         cr.execute("""
             SELECT type, definition FROM ir_model_constraint, ir_module_module
             WHERE ir_model_constraint.module=ir_module_module.id
@@ -2309,6 +2311,10 @@ class BaseModel(object):
                 SET date_update=now() AT TIME ZONE 'UTC', type=%s, definition=%s
                 WHERE name=%s AND module = (SELECT id FROM ir_module_module WHERE name=%s)""",
                     (type, definition, constraint_name, module))
+
+    @api.model_cr
+    def _drop_constraint(self, source_table, constraint_name):
+        self._cr.execute("ALTER TABLE %s DROP CONSTRAINT %s" % (source_table, constraint_name))
 
     def _save_relation_table(self, cr, relation_table, module):
         """
@@ -2346,9 +2352,6 @@ class BaseModel(object):
         fk_def = (source_table, source_field, dest_model._table, ondelete or 'set null', module)
         self._foreign_keys.add(fk_def)
         _schema.debug("Table '%s': added foreign key '%s' with definition=REFERENCES \"%s\" ON DELETE %s", *fk_def[:-1])
-
-    def _drop_constraint(self, cr, source_table, constraint_name):
-        cr.execute("ALTER TABLE %s DROP CONSTRAINT %s" % (source_table,constraint_name))
 
     def _m2o_fix_foreign_key(self, cr, source_table, source_field, dest_model, ondelete):
         # Find FK constraint(s) currently established for the m2o field,
