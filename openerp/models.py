@@ -2702,7 +2702,7 @@ class BaseModel(object):
 
         if stored_fields:
             # trigger computation of new-style stored fields with a compute
-            def func(cr):
+            def func():
                 fnames = [f.name for f in stored_fields]
                 _logger.info("Storing computed values of %s fields %s",
                              self._name, ', '.join(sorted(fnames)))
