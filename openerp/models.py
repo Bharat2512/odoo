@@ -3170,7 +3170,8 @@ class BaseModel(object):
 
         return res
 
-    def get_empty_list_help(self, cr, user, help, context=None):
+    @api.model
+    def get_empty_list_help(self, help):
         """ Generic method giving the help message displayed when having
             no result to display in a list or kanban view. By default it returns
             the help given in parameter that is generally the help message
