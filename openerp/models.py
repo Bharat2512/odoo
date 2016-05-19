@@ -3521,23 +3521,25 @@ class BaseModel(object):
             del r['name'], r['module']
         return res
 
-    def _check_concurrency(self, cr, ids, context):
-        if not context:
-            return
-        if not (context.get(self.CONCURRENCY_CHECK_FIELD) and self._log_access):
+    @api.multi
+    def _check_concurrency(self):
+        if not (self._log_access and self._context.get(self.CONCURRENCY_CHECK_FIELD)):
             return
         check_clause = "(id = %s AND %s < COALESCE(write_date, create_date, (now() at time zone 'UTC'))::timestamp)"
-        for sub_ids in cr.split_for_in_conditions(ids):
-            ids_to_check = []
+        for sub_ids in self._cr.split_for_in_conditions(self.ids):
+            nclauses = 0
+            params = []
             for id in sub_ids:
                 id_ref = "%s,%s" % (self._name, id)
-                update_date = context[self.CONCURRENCY_CHECK_FIELD].pop(id_ref, None)
+                update_date = self._context[self.CONCURRENCY_CHECK_FIELD].pop(id_ref, None)
                 if update_date:
-                    ids_to_check.extend([id, update_date])
-            if not ids_to_check:
+                    nclauses += 1
+                    params.extend([id, update_date])
+            if not nclauses:
                 continue
-            cr.execute("SELECT id FROM %s WHERE %s" % (self._table, " OR ".join([check_clause]*(len(ids_to_check)/2))), tuple(ids_to_check))
-            res = cr.fetchone()
+            query = "SELECT id FROM %s WHERE %s" % (self._table, " OR ".join([check_clause] * nclauses))
+            self._cr.execute(query, tuple(params))
+            res = self._cr.fetchone()
             if res:
                 # mention the first one only to keep the error message readable
                 raise ValidationError(_('A document was modified since you last viewed it (%s:%d)') % (self._description, res[0]))
@@ -3676,7 +3678,7 @@ class BaseModel(object):
         recs = self.browse(cr, uid, ids, context)
         recs.modified(self._fields)
 
-        self._check_concurrency(cr, ids, context)
+        self._check_concurrency(cr, uid, ids, context)
 
         self.check_access_rights(cr, uid, 'unlink')
 
@@ -3837,7 +3839,7 @@ class BaseModel(object):
         if not self:
             return True
 
-        self._check_concurrency(self._ids)
+        self._check_concurrency()
         self.check_access_rights('write')
 
         # No user-driven update of these columns
