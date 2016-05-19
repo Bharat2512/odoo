@@ -2355,26 +2355,28 @@ class BaseModel(object):
         self._foreign_keys.add(fk_def)
         _schema.debug("Table '%s': added foreign key '%s' with definition=REFERENCES \"%s\" ON DELETE %s", *fk_def[:-1])
 
-    def _m2o_fix_foreign_key(self, cr, source_table, source_field, dest_model, ondelete):
+    @api.model_cr
+    def _m2o_fix_foreign_key(self, source_table, source_field, dest_model, ondelete):
         # Find FK constraint(s) currently established for the m2o field,
         # and see whether they are stale or not
-        cr.execute("""SELECT confdeltype as ondelete_rule, conname as constraint_name,
-                             cl2.relname as foreign_table
+        query = """ SELECT confdeltype as ondelete_rule, conname as constraint_name,
+                           cl2.relname as foreign_table
                       FROM pg_constraint as con, pg_class as cl1, pg_class as cl2,
                            pg_attribute as att1, pg_attribute as att2
-                      WHERE con.conrelid = cl1.oid
-                        AND cl1.relname = %s
-                        AND con.confrelid = cl2.oid
-                        AND array_lower(con.conkey, 1) = 1
-                        AND con.conkey[1] = att1.attnum
-                        AND att1.attrelid = cl1.oid
-                        AND att1.attname = %s
-                        AND array_lower(con.confkey, 1) = 1
-                        AND con.confkey[1] = att2.attnum
-                        AND att2.attrelid = cl2.oid
-                        AND att2.attname = %s
-                        AND con.contype = 'f'""", (source_table, source_field, 'id'))
-        constraints = cr.dictfetchall()
+                     WHERE con.conrelid = cl1.oid
+                       AND cl1.relname = %s
+                       AND con.confrelid = cl2.oid
+                       AND array_lower(con.conkey, 1) = 1
+                       AND con.conkey[1] = att1.attnum
+                       AND att1.attrelid = cl1.oid
+                       AND att1.attname = %s
+                       AND array_lower(con.confkey, 1) = 1
+                       AND con.confkey[1] = att2.attnum
+                       AND att2.attrelid = cl2.oid
+                       AND att2.attname = %s
+                       AND con.contype = 'f' """
+        self._cr.execute(query, (source_table, source_field, 'id'))
+        constraints = self._cr.dictfetchall()
         if constraints:
             if len(constraints) == 1:
                 # Is it the right constraint?
@@ -2384,7 +2386,7 @@ class BaseModel(object):
                     # Wrong FK: drop it and recreate
                     _schema.debug("Table '%s': dropping obsolete FK constraint: '%s'",
                                   source_table, cons['constraint_name'])
-                    self._drop_constraint(cr, source_table, cons['constraint_name'])
+                    self._drop_constraint(source_table, cons['constraint_name'])
                 else:
                     # it's all good, nothing to do!
                     return
@@ -2393,7 +2395,7 @@ class BaseModel(object):
                 for cons in constraints:
                     _schema.debug("Table '%s': dropping duplicate FK constraints: '%s'",
                                   source_table, cons['constraint_name'])
-                    self._drop_constraint(cr, source_table, cons['constraint_name'])
+                    self._drop_constraint(source_table, cons['constraint_name'])
 
         # (re-)create the FK
         self._m2o_add_foreign_key_checked(source_field, dest_model, ondelete)
@@ -2444,7 +2446,7 @@ class BaseModel(object):
         """
         assert 'todo' in (context or {}), "Context not passed correctly to method _auto_init()."
 
-        self._foreign_keys = set()
+        type(self)._foreign_keys = set()
         raise_on_invalid_object_name(self._name)
 
         # This prevents anything called by this method (in particular default
@@ -2727,7 +2729,7 @@ class BaseModel(object):
             cr.execute(query % (table1, column, table2, ondelete))
             self._save_constraint(cr, "%s_%s_fkey" % (table1, column), 'f', False, module)
         cr.commit()
-        del self._foreign_keys
+        del type(self)._foreign_keys
 
     def init(self, cr):
         """ This method is called after :meth:`~._auto_init`, and may be
