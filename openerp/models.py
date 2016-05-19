@@ -2400,29 +2400,32 @@ class BaseModel(object):
         # (re-)create the FK
         self._m2o_add_foreign_key_checked(source_field, dest_model, ondelete)
 
-    def _init_column(self, cr, column_name, context=None):
+    @api.model_cr_context
+    def _init_column(self, column_name):
         """ Initialize the value of the given column for existing rows. """
         # get the default value; ideally, we should use default_get(), but it
         # fails due to ir.values not being ready
-        default = self._defaults.get(column_name)
-        if callable(default):
-            default = default(self, cr, SUPERUSER_ID, context)
-
-        column = self._columns[column_name]
-        ss = column._symbol_set
-        db_default = ss[1](default)
-        # Write default if non-NULL, except for booleans for which False means
+        field = self._fields[column_name]
+        setc, setf = field.column._symbol_set
+        if field.default:
+            value = field.default(self)
+            value = field.convert_to_cache(value, self, validate=False)
+            value = field.convert_to_record(value, self)
+            value = field.convert_to_write(value, self)
+            value = setf(value)
+        else:
+            value = None
+        # Write value if non-NULL, except for booleans for which False means
         # the same as NULL - this saves us an expensive query on large tables.
-        write_default = (db_default is not None if column._type != 'boolean'
-                            else db_default)
-        if write_default:
+        necessary = (value is not None) if field.type != 'boolean' else value
+        if necessary:
             _logger.debug("Table '%s': setting default value of new column %s to %r",
-                          self._table, column_name, default)
-            query = 'UPDATE "%s" SET "%s"=%s WHERE "%s" is NULL' % (
-                self._table, column_name, ss[0], column_name)
-            cr.execute(query, (db_default,))
+                          self._table, column_name, value)
+            query = 'UPDATE "%s" SET "%s"=%s WHERE "%s" IS NULL' % (
+                self._table, column_name, setc, column_name)
+            self._cr.execute(query, (value,))
             # this is a disgrace
-            cr.commit()
+            self._cr.commit()
 
     def _auto_init(self, cr, context=None):
         """
