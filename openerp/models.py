@@ -2224,24 +2224,24 @@ class BaseModel(object):
         self.invalidate_cache(['parent_left', 'parent_right'])
         return True
 
-    def _update_store(self, cr, f, k):
-        _logger.info("storing computed values of fields.function '%s'", k)
-        ss = self._columns[k]._symbol_set
-        update_query = 'UPDATE "%s" SET "%s"=%s WHERE id=%%s' % (self._table, k, ss[0])
-        cr.execute('select id from '+self._table)
-        ids_lst = map(lambda x: x[0], cr.fetchall())
-        while ids_lst:
-            iids = ids_lst[:AUTOINIT_RECALCULATE_STORED_FIELDS]
-            ids_lst = ids_lst[AUTOINIT_RECALCULATE_STORED_FIELDS:]
-            res = f.get(cr, self, iids, k, SUPERUSER_ID, {})
-            for key, val in res.items():
-                if f._multi:
-                    val = val[k]
+    @api.model_cr
+    def _update_store(self, column, name):
+        _logger.info("storing computed values of fields.function '%s'", name)
+        cr = self._cr
+        setc, setf = column._symbol_set
+        update_query = 'UPDATE "%s" SET "%s"=%s WHERE id=%%s' % (self._table, name, setc)
+        cr.execute('SELECT id FROM "%s"' % self._table)
+        ids = [row[0] for row in cr.fetchall()]
+        for sub_ids in cr.split_for_in_conditions(ids, AUTOINIT_RECALCULATE_STORED_FIELDS):
+            res = column.get(cr, self._model, sub_ids, name, SUPERUSER_ID, {})
+            for id, val in res.iteritems():
+                if column._multi:
+                    val = val[name]
                 # if val is a many2one, just write the ID
-                if type(val) == tuple:
+                if isinstance(val, tuple):
                     val = val[0]
-                if f._type == 'boolean' or val is not False:
-                    cr.execute(update_query, (ss[1](val), key))
+                if column._type == 'boolean' or val is not False:
+                    cr.execute(update_query, (setf(val), id))
 
     @api.model
     def _check_selection_field_value(self, field, value):
