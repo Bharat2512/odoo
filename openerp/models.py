@@ -2427,19 +2427,17 @@ class BaseModel(object):
             # this is a disgrace
             self._cr.commit()
 
-    def _auto_init(self, cr, context=None):
-        """
-        Call _field_create and, unless _auto is False:
-
-        - create the corresponding table in database for the model,
-        - possibly add the parent columns in database,
-        - possibly add the columns 'create_uid', 'create_date', 'write_uid',
-          'write_date' in database if _log_access is True (the default),
-        - report on database columns no more existing in _columns,
+    @api.model_cr_context
+    def _auto_init(self):
+        """ Reflect the model and initialize the database schema of ``self``:
+        - create the corresponding table in database,
+        - add the parent columns in database,
+        - add the '_log_access' columns if required,
+        - report on database columns no more existing in ``self._columns``,
         - remove no more existing not null constraints,
-        - alter existing database columns to match _columns,
-        - create database tables to match _columns,
-        - add database indices to match _columns,
+        - alter existing database columns to match ``self._columns``,
+        - create database tables to match ``self._columns``,
+        - add database indices to match ``self._columns``,
         - save in self._foreign_keys a list a foreign keys to create (see
           _auto_end).
 
@@ -2447,7 +2445,7 @@ class BaseModel(object):
         model's database schema by overriding method :meth:`~.init`, which is
         called right after this one.
         """
-        assert 'todo' in (context or {}), "Context not passed correctly to method _auto_init()."
+        assert 'todo' in self._context, "Context not passed correctly to method _auto_init()."
 
         type(self)._foreign_keys = set()
         raise_on_invalid_object_name(self._name)
@@ -2455,23 +2453,20 @@ class BaseModel(object):
         # This prevents anything called by this method (in particular default
         # values) from prefetching a field for which the corresponding column
         # has not been added in database yet!
-        context = dict(context or {}, prefetch_fields=False)
+        self = self.with_context(prefetch_fields=False)
 
-        # Make sure an environment is available for get_pg_type(). This is
-        # because we access column.digits, which retrieves a cursor from
-        # existing environments.
-        env = api.Environment(cr, SUPERUSER_ID, context)
-
-        store_compute = False
+        cr = self._cr
+        parent_store_compute = False
         stored_fields = []              # new-style stored fields with compute
-        todo_end = context['todo']
-        update_custom_fields = context.get('update_custom_fields', False)
-        self._field_create(cr, context=context)
-        create = not self._table_exist(cr)
+        todo_end = self._context['todo']
+        update_custom_fields = self._context.get('update_custom_fields', False)
+        self._field_create()
+        create = not self._table_exist()
+
         if self._auto:
 
             if create:
-                self._create_table(cr)
+                self._create_table()
                 has_rows = False
             else:
                 cr.execute('SELECT 1 FROM "%s" LIMIT 1' % self._table)
@@ -2479,112 +2474,109 @@ class BaseModel(object):
 
             cr.commit()
             if self._parent_store:
-                if not self._parent_columns_exist(cr):
-                    self._create_parent_columns(cr)
-                    store_compute = True
+                if not self._parent_columns_exist():
+                    self._create_parent_columns()
+                    parent_store_compute = True
 
-            self._check_removed_columns(cr, log=False)
+            self._check_removed_columns(log=False)
 
-            # iterate on the "object columns"
-            column_data = self._select_column_data(cr)
+            # retrieve existing database columns
+            column_data = self._select_column_data()
 
-            for k, f in self._columns.iteritems():
-                if k == 'id': # FIXME: maybe id should be a regular column?
-                    continue
-                # Don't update custom (also called manual) fields
-                if f.manual and not update_custom_fields:
+            for name, column in self._columns.iteritems():
+                if name == 'id':
                     continue
 
-                if isinstance(f, fields.one2many):
-                    self._o2m_raise_on_missing_reference(cr, f)
+                if column.manual and not update_custom_fields:
+                    # Don't update custom (also called manual) fields
+                    continue
 
-                elif isinstance(f, fields.many2many):
-                    res = self._m2m_raise_or_create_relation(cr, f)
-                    if res and self._fields[k].depends:
-                        stored_fields.append(self._fields[k])
+                if isinstance(column, fields.one2many):
+                    self._o2m_raise_on_missing_reference(column)
+
+                elif isinstance(column, fields.many2many):
+                    res = self._m2m_raise_or_create_relation(column)
+                    if res and self._fields[name].depends:
+                        stored_fields.append(self._fields[name])
 
                 else:
-                    res = column_data.get(k)
+                    res = column_data.get(name)
 
-                    # The field is not found as-is in database, try if it
-                    # exists with an old name.
-                    if not res and hasattr(f, 'oldname'):
-                        res = column_data.get(f.oldname)
+                    # The column is not found as-is in database. Check whether
+                    # it exists with an old name, and rename it.
+                    if not res and hasattr(column, 'oldname'):
+                        res = column_data.get(column.oldname)
                         if res:
-                            cr.execute('ALTER TABLE "%s" RENAME "%s" TO "%s"' % (self._table, f.oldname, k))
-                            res['attname'] = k
-                            column_data[k] = res
-                            _schema.debug("Table '%s': renamed column '%s' to '%s'",
-                                self._table, f.oldname, k)
+                            cr.execute('ALTER TABLE "%s" RENAME "%s" TO "%s"' % (self._table, column.oldname, name))
+                            res['attname'] = name
+                            _schema.debug("Table '%s': renamed column '%s' to '%s'", self._table, column.oldname, name)
 
-                    # The field already exists in database. Possibly
-                    # change its type, rename it, drop it or change its
-                    # constraints.
+                    # The column already exists in database. Possibly change its
+                    # type, rename it, drop it or change its constraints.
                     if res:
                         f_pg_type = res['typname']
                         f_pg_size = res['size']
                         f_pg_notnull = res['attnotnull']
-                        if isinstance(f, fields.function) and not f.store and\
-                                not getattr(f, 'nodrop', False):
+                        if isinstance(column, fields.function) and not column.store and \
+                                not getattr(column, 'nodrop', False):
                             _logger.info('column %s (%s) converted to a function, removed from table %s',
-                                         k, f.string, self._table)
-                            cr.execute('ALTER TABLE "%s" DROP COLUMN "%s" CASCADE' % (self._table, k))
+                                         name, column.string, self._table)
+                            cr.execute('ALTER TABLE "%s" DROP COLUMN "%s" CASCADE' % (self._table, name))
                             cr.commit()
-                            _schema.debug("Table '%s': dropped column '%s' with cascade",
-                                self._table, k)
+                            _schema.debug("Table '%s': dropped column '%s' with cascade", self._table, name)
                             f_obj_type = None
                         else:
-                            f_obj_type = get_pg_type(f) and get_pg_type(f)[0]
+                            f_obj_type = get_pg_type(column) and get_pg_type(column)[0]
 
                         if f_obj_type:
-                            ok = False
+                            converted = False
                             casts = [
-                                ('text', 'char', pg_varchar(f.size), '::%s' % pg_varchar(f.size)),
+                                ('text', 'char', pg_varchar(column.size), '::%s' % pg_varchar(column.size)),
                                 ('varchar', 'text', 'TEXT', ''),
-                                ('int4', 'float', get_pg_type(f)[1], '::'+get_pg_type(f)[1]),
+                                ('int4', 'float', get_pg_type(column)[1], '::'+get_pg_type(column)[1]),
                                 ('date', 'datetime', 'TIMESTAMP', '::TIMESTAMP'),
                                 ('timestamp', 'date', 'date', '::date'),
-                                ('numeric', 'float', get_pg_type(f)[1], '::'+get_pg_type(f)[1]),
-                                ('float8', 'float', get_pg_type(f)[1], '::'+get_pg_type(f)[1]),
-                                ('float8', 'monetary', get_pg_type(f)[1], '::'+get_pg_type(f)[1]),
+                                ('numeric', 'float', get_pg_type(column)[1], '::'+get_pg_type(column)[1]),
+                                ('float8', 'float', get_pg_type(column)[1], '::'+get_pg_type(column)[1]),
+                                ('float8', 'monetary', get_pg_type(column)[1], '::'+get_pg_type(column)[1]),
                             ]
-                            if f_pg_type == 'varchar' and f._type in ('char', 'selection') and f_pg_size and (f.size is None or f_pg_size < f.size):
+                            if f_pg_type == 'varchar' and column._type in ('char', 'selection') and f_pg_size and (column.size is None or f_pg_size < column.size):
                                 try:
                                     with cr.savepoint():
-                                        cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" TYPE %s' % (self._table, k, pg_varchar(f.size)), log_exceptions=False)
+                                        cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" TYPE %s' % (self._table, name, pg_varchar(column.size)), log_exceptions=False)
                                 except psycopg2.NotSupportedError:
                                     # In place alter table cannot be done because a view is depending of this field.
                                     # Do a manual copy. This will drop the view (that will be recreated later)
-                                    cr.execute('ALTER TABLE "%s" RENAME COLUMN "%s" TO temp_change_size' % (self._table, k))
-                                    cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, k, pg_varchar(f.size)))
-                                    cr.execute('UPDATE "%s" SET "%s"=temp_change_size::%s' % (self._table, k, pg_varchar(f.size)))
+                                    cr.execute('ALTER TABLE "%s" RENAME COLUMN "%s" TO temp_change_size' % (self._table, name))
+                                    cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, name, pg_varchar(column.size)))
+                                    cr.execute('UPDATE "%s" SET "%s"=temp_change_size::%s' % (self._table, name, pg_varchar(column.size)))
                                     cr.execute('ALTER TABLE "%s" DROP COLUMN temp_change_size CASCADE' % (self._table,))
                                 cr.commit()
                                 _schema.debug("Table '%s': column '%s' (type varchar) changed size from %s to %s",
-                                    self._table, k, f_pg_size or 'unlimited', f.size or 'unlimited')
+                                              self._table, name, f_pg_size or 'unlimited', column.size or 'unlimited')
                             for c in casts:
-                                if (f_pg_type==c[0]) and (f._type==c[1]):
+                                if (f_pg_type == c[0]) and (column._type == c[1]):
                                     if f_pg_type != f_obj_type:
-                                        ok = True
+                                        converted = True
                                         try:
                                             with cr.savepoint():
-                                                cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" TYPE %s' % (self._table, k, c[2]), log_exceptions=False)
+                                                cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" TYPE %s' % (self._table, name, c[2]), log_exceptions=False)
                                         except psycopg2.NotSupportedError:
                                             # can't do inplace change -> use a casted temp column
-                                            cr.execute('ALTER TABLE "%s" RENAME COLUMN "%s" TO __temp_type_cast' % (self._table, k))
-                                            cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, k, c[2]))
-                                            cr.execute('UPDATE "%s" SET "%s"= __temp_type_cast%s' % (self._table, k, c[3]))
+                                            cr.execute('ALTER TABLE "%s" RENAME COLUMN "%s" TO __temp_type_cast' % (self._table, name))
+                                            cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, name, c[2]))
+                                            cr.execute('UPDATE "%s" SET "%s"= __temp_type_cast%s' % (self._table, name, c[3]))
                                             cr.execute('ALTER TABLE "%s" DROP COLUMN  __temp_type_cast CASCADE' % (self._table,))
                                         cr.commit()
                                         _schema.debug("Table '%s': column '%s' changed type from %s to %s",
-                                            self._table, k, c[0], c[1])
+                                                      self._table, name, c[0], c[1])
                                     break
 
                             if f_pg_type != f_obj_type:
-                                if not ok:
+                                if not converted:
                                     i = 0
                                     while True:
-                                        newname = k + '_moved' + str(i)
+                                        newname = name + '_moved' + str(i)
                                         cr.execute("SELECT count(1) FROM pg_class c,pg_attribute a " \
                                             "WHERE c.relname=%s " \
                                             "AND a.attname=%s " \
@@ -2593,107 +2585,104 @@ class BaseModel(object):
                                             break
                                         i += 1
                                     if f_pg_notnull:
-                                        cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" DROP NOT NULL' % (self._table, k))
-                                    cr.execute('ALTER TABLE "%s" RENAME COLUMN "%s" TO "%s"' % (self._table, k, newname))
-                                    cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, k, get_pg_type(f)[1]))
-                                    cr.execute("COMMENT ON COLUMN %s.\"%s\" IS %%s" % (self._table, k), (f.string,))
+                                        cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" DROP NOT NULL' % (self._table, name))
+                                    cr.execute('ALTER TABLE "%s" RENAME COLUMN "%s" TO "%s"' % (self._table, name, newname))
+                                    cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, name, get_pg_type(column)[1]))
+                                    cr.execute("COMMENT ON COLUMN %s.\"%s\" IS %%s" % (self._table, name), (column.string,))
                                     _schema.warning("Table `%s`: column `%s` has changed type (DB=%s, def=%s), data moved to column `%s`",
-                                                    self._table, k, f_pg_type, f._type, newname)
+                                                    self._table, name, f_pg_type, column._type, newname)
 
                             # if the field is required and hasn't got a NOT NULL constraint
-                            if f.required and f_pg_notnull == 0:
+                            if column.required and f_pg_notnull == 0:
                                 if has_rows:
-                                    self._init_column(cr, k, context=context)
+                                    self._init_column(name)
                                 # add the NOT NULL constraint
                                 try:
-                                    cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" SET NOT NULL' % (self._table, k), log_exceptions=False)
+                                    cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" SET NOT NULL' % (self._table, name), log_exceptions=False)
                                     cr.commit()
                                     _schema.debug("Table '%s': column '%s': added NOT NULL constraint",
-                                        self._table, k)
+                                                  self._table, name)
                                 except Exception:
                                     msg = "Table '%s': unable to set a NOT NULL constraint on column '%s' !\n"\
                                         "If you want to have it, you should update the records and execute manually:\n"\
                                         "ALTER TABLE %s ALTER COLUMN %s SET NOT NULL"
-                                    _schema.warning(msg, self._table, k, self._table, k)
+                                    _schema.warning(msg, self._table, name, self._table, name)
                                 cr.commit()
-                            elif not f.required and f_pg_notnull == 1:
-                                cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" DROP NOT NULL' % (self._table, k))
+                            elif not column.required and f_pg_notnull == 1:
+                                cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" DROP NOT NULL' % (self._table, name))
                                 cr.commit()
                                 _schema.debug("Table '%s': column '%s': dropped NOT NULL constraint",
-                                    self._table, k)
+                                              self._table, name)
                             # Verify index
-                            indexname = '%s_%s_index' % (self._table, k)
+                            indexname = '%s_%s_index' % (self._table, name)
                             cr.execute("SELECT indexname FROM pg_indexes WHERE indexname = %s and tablename = %s", (indexname, self._table))
                             res2 = cr.dictfetchall()
-                            if not res2 and f.select:
-                                cr.execute('CREATE INDEX "%s_%s_index" ON "%s" ("%s")' % (self._table, k, self._table, k))
+                            if not res2 and column.select:
+                                cr.execute('CREATE INDEX "%s_%s_index" ON "%s" ("%s")' % (self._table, name, self._table, name))
                                 cr.commit()
-                                if f._type == 'text':
+                                if column._type == 'text':
                                     # FIXME: for fields.text columns we should try creating GIN indexes instead (seems most suitable for an ERP context)
                                     msg = "Table '%s': Adding (b-tree) index for %s column '%s'."\
                                         "This is probably useless (does not work for fulltext search) and prevents INSERTs of long texts"\
                                         " because there is a length limit for indexable btree values!\n"\
                                         "Use a search view instead if you simply want to make the field searchable."
-                                    _schema.warning(msg, self._table, f._type, k)
-                            if res2 and not f.select:
-                                cr.execute('DROP INDEX "%s_%s_index"' % (self._table, k))
+                                    _schema.warning(msg, self._table, column._type, name)
+                            if res2 and not column.select:
+                                cr.execute('DROP INDEX "%s_%s_index"' % (self._table, name))
                                 cr.commit()
                                 msg = "Table '%s': dropping index for column '%s' of type '%s' as it is not required anymore"
-                                _schema.debug(msg, self._table, k, f._type)
+                                _schema.debug(msg, self._table, name, column._type)
 
-                            if isinstance(f, fields.many2one) or (isinstance(f, fields.function) and f._type == 'many2one' and f.store):
-                                dest_model = self.pool[f._obj]
+                            if isinstance(column, fields.many2one) or (isinstance(column, fields.function) and column._type == 'many2one' and column.store):
+                                dest_model = self.pool[column._obj]
                                 if dest_model._auto and dest_model._table != 'ir_actions':
-                                    self._m2o_fix_foreign_key(cr, self._table, k, dest_model, f.ondelete)
+                                    self._m2o_fix_foreign_key(self._table, name, dest_model, column.ondelete)
 
-                    # The field doesn't exist in database. Create it if necessary.
-                    else:
-                        if f._classic_write:
-                            # add the missing field
-                            cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, k, get_pg_type(f)[1]))
-                            cr.execute("COMMENT ON COLUMN %s.\"%s\" IS %%s" % (self._table, k), (f.string,))
-                            _schema.debug("Table '%s': added column '%s' with definition=%s",
-                                self._table, k, get_pg_type(f)[1])
+                    elif column._classic_write:
+                        # the column doesn't exist in database, create it
+                        cr.execute('ALTER TABLE "%s" ADD COLUMN "%s" %s' % (self._table, name, get_pg_type(column)[1]))
+                        cr.execute("COMMENT ON COLUMN %s.\"%s\" IS %%s" % (self._table, name), (column.string,))
+                        _schema.debug("Table '%s': added column '%s' with definition=%s",
+                                      self._table, name, get_pg_type(column)[1])
 
-                            # initialize it
-                            if has_rows:
-                                self._init_column(cr, k, context=context)
+                        # initialize it
+                        if has_rows:
+                            self._init_column(name)
 
-                            # remember the functions to call for the stored fields
-                            if isinstance(f, fields.function):
-                                order = 10
-                                if f.store is not True: # i.e. if f.store is a dict
-                                    order = f.store[f.store.keys()[0]][2]
-                                todo_end.append((order, self._update_store, (f, k)))
+                        # remember the functions to call for the stored fields
+                        if isinstance(column, fields.function):
+                            order = 10
+                            if column.store is not True: # i.e. if column.store is a dict
+                                order = column.store[column.store.keys()[0]][2]
+                            todo_end.append((order, self._update_store, (column, name)))
 
-                            # remember new-style stored fields with compute method
-                            if k in self._fields and self._fields[k].depends:
-                                stored_fields.append(self._fields[k])
+                        # remember new-style stored fields with compute method
+                        if self._fields[name].depends:
+                            stored_fields.append(self._fields[name])
 
-                            # and add constraints if needed
-                            if isinstance(f, fields.many2one) or (isinstance(f, fields.function) and f._type == 'many2one' and f.store):
-                                if f._obj not in self.pool:
-                                    raise ValueError(_('There is no reference available for %s') % (f._obj,))
-                                dest_model = self.pool[f._obj]
-                                ref = dest_model._table
-                                # ir_actions is inherited so foreign key doesn't work on it
-                                if dest_model._auto and ref != 'ir_actions':
-                                    self._m2o_add_foreign_key_checked(k, dest_model, f.ondelete)
-                            if f.select:
-                                cr.execute('CREATE INDEX "%s_%s_index" ON "%s" ("%s")' % (self._table, k, self._table, k))
-                            if f.required:
-                                try:
-                                    cr.commit()
-                                    cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" SET NOT NULL' % (self._table, k))
-                                    _schema.debug("Table '%s': column '%s': added a NOT NULL constraint",
-                                        self._table, k)
-                                except Exception:
-                                    msg = "WARNING: unable to set column %s of table %s not null !\n"\
-                                        "Try to re-run: openerp-server --update=module\n"\
-                                        "If it doesn't work, update records and execute manually:\n"\
-                                        "ALTER TABLE %s ALTER COLUMN %s SET NOT NULL"
-                                    _logger.warning(msg, k, self._table, self._table, k, exc_info=True)
-                            cr.commit()
+                        # and add constraints if needed
+                        if self._fields[name].type == 'many2one' and self._fields[name].store:
+                            if column._obj not in self.env:
+                                raise ValueError(_('There is no reference available for %s') % (column._obj,))
+                            dest_model = self.env[column._obj]
+                            # ir_actions is inherited so foreign key doesn't work on it
+                            if dest_model._auto and dest_model._table != 'ir_actions':
+                                self._m2o_add_foreign_key_checked(name, dest_model, column.ondelete)
+                        if column.select:
+                            cr.execute('CREATE INDEX "%s_%s_index" ON "%s" ("%s")' % (self._table, name, self._table, name))
+                        if column.required:
+                            try:
+                                cr.commit()
+                                cr.execute('ALTER TABLE "%s" ALTER COLUMN "%s" SET NOT NULL' % (self._table, name))
+                                _schema.debug("Table '%s': column '%s': added a NOT NULL constraint",
+                                              self._table, name)
+                            except Exception:
+                                msg = "WARNING: unable to set column %s of table %s not null !\n"\
+                                    "Try to re-run: openerp-server --update=module\n"\
+                                    "If it doesn't work, update records and execute manually:\n"\
+                                    "ALTER TABLE %s ALTER COLUMN %s SET NOT NULL"
+                                _logger.warning(msg, name, self._table, self._table, name, exc_info=True)
+                        cr.commit()
 
         else:
             cr.execute("SELECT relname FROM pg_class WHERE relkind IN ('r','v') AND relname=%s", (self._table,))
@@ -2702,13 +2691,13 @@ class BaseModel(object):
         cr.commit()     # start a new transaction
 
         if self._auto:
-            self._add_sql_constraints(cr)
+            self._add_sql_constraints()
 
         if create:
-            self._execute_sql(cr)
+            self._execute_sql()
 
-        if store_compute:
-            self._parent_store_compute(cr)
+        if parent_store_compute:
+            self._parent_store_compute()
             cr.commit()
 
         if stored_fields:
@@ -2717,24 +2706,27 @@ class BaseModel(object):
                 fnames = [f.name for f in stored_fields]
                 _logger.info("Storing computed values of %s fields %s",
                              self._name, ', '.join(sorted(fnames)))
-                recs = self.browse(cr, SUPERUSER_ID, [], {'active_test': False})
-                recs = recs.search([])
+                recs = self.with_context(active_test=False).search([])
                 if recs:
                     recs.invalidate_cache(fnames, recs.ids)
-                    map(recs._recompute_todo, stored_fields)
+                    for f in stored_fields:
+                        recs._recompute_todo(f)
 
             todo_end.append((1000, func, ()))
 
-    def _auto_end(self, cr, context=None):
+    @api.model_cr_context
+    def _auto_end(self):
         """ Create the foreign keys recorded by _auto_init. """
+        cr = self._cr
         query = 'ALTER TABLE "%s" ADD FOREIGN KEY ("%s") REFERENCES "%s" ON DELETE %s'
         for table1, column, table2, ondelete, module in self._foreign_keys:
             cr.execute(query % (table1, column, table2, ondelete))
-            self._save_constraint(cr, "%s_%s_fkey" % (table1, column), 'f', False, module)
+            self._save_constraint("%s_%s_fkey" % (table1, column), 'f', False, module)
         cr.commit()
         del type(self)._foreign_keys
 
-    def init(self, cr):
+    @api.model_cr
+    def init(self):
         """ This method is called after :meth:`~._auto_init`, and may be
             overridden to create or modify a model's database schema.
         """
