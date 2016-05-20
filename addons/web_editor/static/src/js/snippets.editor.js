@@ -951,10 +951,7 @@ data.Editor = Class.extend({
     get_parent_block: function () {
         var self = this;
         var $button = this.$overlay.find('.oe_snippet_parent');
-        var $parent = this.$target.parents().filter(function () { return $(this).data("snippet-editor"); });
-        if (!$parent.length) {
-            $parent = data.globalSelector.closest(this.$target.parent());
-        }
+        var $parent = data.globalSelector.closest(this.$target.parent());
         if ($parent.length) {
             $button.removeClass("hidden");
             $button.off("click").on('click', function (event) {
