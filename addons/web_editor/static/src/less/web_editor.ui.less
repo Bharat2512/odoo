@@ -343,6 +343,9 @@ html[lang] > body.editor_enable{
                             background-color: darken(@o-we-color-danger, 20%);
                         }
                     }
+                    &.oe_snippet_parent > i {
+                        .scaleX(-1);
+                    }
                 }
 
                 // CUSTOMIZE MENU BUTTON
@@ -438,6 +441,21 @@ html[lang] > body.editor_enable{
                                     content: "\f00c";
                                     font-family: "FontAwesome";
                                     color: @odoo-brand-optional;
+                                }
+                            }
+                            &.dropdown-header {
+                                color: wheat;
+                                font-weight: bold;
+
+                                &::before {
+                                    content: "\f148";
+                                    .o-position-absolute(@top: 0, @left: 5px);
+                                    font-family: FontAwesome;
+                                    .scaleX(-1);
+                                }
+
+                                ~ li:not(.dropdown-header) {
+                                    padding-left: 16px;
                                 }
                             }
                         }

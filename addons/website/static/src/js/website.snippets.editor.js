@@ -11,24 +11,6 @@ snippet_editor.Class.include({
     }
 });
 
-var preventParentEmpty = {
-    hide_remove_button: function () {
-        this.$overlay.find('.oe_snippet_remove, .oe_snippet_move').toggleClass("hidden", !this.$target.siblings().length);
-    },
-    on_focus : function () {
-        this._super();
-        this.hide_remove_button();
-    },
-    on_clone: function ($clone) {
-        this._super($clone);
-        this.hide_remove_button();
-    },
-    on_remove: function () {
-        this._super();
-        this.hide_remove_button();
-    },
-};
-
 options.registry.slider = options.Class.extend({
     drop_and_build_snippet: function () {
         this.id = "myCarousel" + new Date().getTime();
@@ -185,6 +167,8 @@ options.registry.carousel = options.registry.slider.extend({
 });
 
 options.registry.marginAndResize = options.Class.extend({
+    preventChildPropagation: true,
+
     start: function () {
         var self = this;
         this._super();
@@ -365,6 +349,8 @@ options.registry.marginAndResize = options.Class.extend({
 });
 
 options.registry["margin-y"] = options.registry.marginAndResize.extend({
+    preventChildPropagation: true,
+
     getSize: function () {
         this.grid = this._super();
         var grid = [0,4,8,16,32,48,64,92,128];
@@ -379,7 +365,9 @@ options.registry["margin-y"] = options.registry.marginAndResize.extend({
     },
 });
 
-options.registry["margin-x"] = options.registry.marginAndResize.extend(preventParentEmpty).extend({
+options.registry["margin-x"] = options.registry.marginAndResize.extend({
+    preventChildPropagation: true,
+
     getSize: function () {
         this.grid = this._super();
         var width = this.$target.parents(".row:first").first().outerWidth();
@@ -451,6 +439,8 @@ options.registry["margin-x"] = options.registry.marginAndResize.extend(preventPa
 });
 
 options.registry.resize = options.registry.marginAndResize.extend({
+    preventChildPropagation: true,
+
     getSize: function () {
         this.grid = this._super();
         this.grid.size = 8;
@@ -548,7 +538,7 @@ options.registry.ul = options.Class.extend({
     }
 });
 
-options.registry.collapse = options.Class.extend(preventParentEmpty).extend({
+options.registry.collapse = options.Class.extend({
     start: function () {
         var self = this;
         this._super();

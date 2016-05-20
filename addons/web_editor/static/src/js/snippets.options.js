@@ -15,19 +15,21 @@ odoo.define('web_editor.snippets.options', function (require) {
     /* ----- Editor option (object link the the xml with data-js) ---- */
 
     var SnippetOption = Class.extend({
-        // initialisation (don't overwrite)
         init: function (BuildingBlock, editor, $target, option_id) {
             this.buildingBlock = BuildingBlock;
             this.editor = editor;
             this.$target = $target;
             var option = this.buildingBlock.templateOptions[option_id];
+
             var styles = this.$target.data("snippet-option-ids") || {};
             styles[option_id] = this;
             this.$target.data("snippet-option-ids", styles);
-            this.$overlay = this.$target.data('overlay') || $('<div>');
-            this.option= option_id;
-            this.$el = option.$el.find(">li").clone();
+
+            this.option = option_id;
+            this.$el = option.$el.children("li").clone();
             this.data = option.$el.data();
+
+            this.$overlay = this.$target.data('overlay') || $();
         },
 
         // helper for this.$target.find
