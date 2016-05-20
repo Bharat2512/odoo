@@ -3873,161 +3873,153 @@ class BaseModel(object):
 
         return True
 
-    def _write(self, cr, user, ids, vals, context=None):
+    @api.multi
+    def _write(self, vals):
         # low-level implementation of write()
-        if not context:
-            context = {}
+        self.check_field_access_rights('write', list(vals))
 
-        readonly = None
-        self.check_field_access_rights(cr, user, 'write', vals.keys())
-        deleted_related = defaultdict(list)
-        for field in vals.keys():
-            fobj = None
-            if field in self._columns:
-                fobj = self._columns[field]
-            elif field in self._inherit_fields:
-                fobj = self._inherit_fields[field][2]
-            if not fobj:
-                continue
-            if fobj._type in ['one2many', 'many2many'] and vals[field]:
-                for wtuple in vals[field]:
-                    if isinstance(wtuple, (tuple, list)) and wtuple[0] == 2:
-                        deleted_related[fobj._obj].append(wtuple[1])
+        cr = self._cr
 
-        result = self._store_get_values(cr, user, ids, vals.keys(), context) or []
+        # for recomputing old-style fields
+        deleted_related = defaultdict(list)     # {model_name: ids}
+        for name, val in vals.iteritems():
+            field = self._fields[name]
+            if field.type in ('one2many', 'many2many') and val:
+                for command in val:
+                    if isinstance(command, (tuple, list)) and command[0] == 2:
+                        deleted_related[field.comodel_name].append(command[1])
+        result_store = self._store_get_values(list(vals))
 
         # for recomputing new-style fields
-        recs = self.browse(cr, user, ids, context)
-        modified_fields = list(vals)
-        if self._log_access:
-            modified_fields += ['write_date', 'write_uid']
-        recs.modified(modified_fields)
+        extra_fields = ['write_date', 'write_uid'] if self._log_access else []
+        self.modified(list(vals) + extra_fields)
 
+        # for updating parent_left, parent_right
         parents_changed = []
-        if self._parent_store and (self._parent_name in vals) and not context.get('defer_parent_store_computation'):
-            # The parent_left/right computation may take up to
-            # 5 seconds. No need to recompute the values if the
-            # parent is the same.
+        if self._parent_store and (self._parent_name in vals) and \
+                not self._context.get('defer_parent_store_computation'):
+            # The parent_left/right computation may take up to 5 seconds. No
+            # need to recompute the values if the parent is the same.
+            #
             # Note: to respect parent_order, nodes must be processed in
             # order, so ``parents_changed`` must be ordered properly.
             parent_val = vals[self._parent_name]
             if parent_val:
                 query = "SELECT id FROM %s WHERE id IN %%s AND (%s != %%s OR %s IS NULL) ORDER BY %s" % \
                                 (self._table, self._parent_name, self._parent_name, self._parent_order)
-                cr.execute(query, (tuple(ids), parent_val))
+                cr.execute(query, (tuple(self.ids), parent_val))
             else:
                 query = "SELECT id FROM %s WHERE id IN %%s AND (%s IS NOT NULL) ORDER BY %s" % \
                                 (self._table, self._parent_name, self._parent_order)
-                cr.execute(query, (tuple(ids),))
+                cr.execute(query, (tuple(self.ids),))
             parents_changed = map(operator.itemgetter(0), cr.fetchall())
 
         updates = []            # list of (column, expr) or (column, pattern, value)
-        upd_todo = []
-        updend = []
-        direct = []
-        has_trans = context.get('lang') and context['lang'] != 'en_US'
-        single_lang = len(self.pool['res.lang'].get_installed(cr, user, context)) <= 1
-        for field in vals:
-            ffield = self._fields.get(field)
-            if ffield and ffield.deprecated:
-                _logger.warning('Field %s.%s is deprecated: %s', self._name, field, ffield.deprecated)
-            if field in self._columns:
-                column = self._columns[field]
-                if hasattr(column, 'selection') and vals[field]:
-                    self._check_selection_field_value(cr, user, field, vals[field], context=context)
+        upd_todo = []           # list of column names to set explicitly
+        updend = []             # list of possibly inherited field names
+        direct = []             # list of direcly updated columns
+        has_trans = self.env.lang and self.env.lang != 'en_US'
+        single_lang = len(self.env['res.lang'].get_installed()) <= 1
+        for name, val in vals.iteritems():
+            field = self._fields[name]
+            if field and field.deprecated:
+                _logger.warning('Field %s.%s is deprecated: %s', self._name, name, field.deprecated)
+            if field.column:
+                column = field.column
+                if hasattr(column, 'selection') and val:
+                    self._check_selection_field_value(name, val)
                 if column._classic_write and not hasattr(column, '_fnct_inv'):
                     if single_lang or not (has_trans and column.translate and not callable(column.translate)):
-                        # vals[field] is not a translation: update the table
-                        updates.append((field, column._symbol_set[0], column._symbol_set[1](vals[field])))
-                    direct.append(field)
+                        # val is not a translation: update the table
+                        setc, setf = column._symbol_set
+                        updates.append((name, setc, setf(val)))
+                    direct.append(name)
                 else:
-                    upd_todo.append(field)
+                    upd_todo.append(name)
             else:
-                updend.append(field)
+                updend.append(name)
 
         if self._log_access:
-            updates.append(('write_uid', '%s', user))
+            updates.append(('write_uid', '%s', self._uid))
             updates.append(('write_date', "(now() at time zone 'UTC')"))
             direct.append('write_uid')
             direct.append('write_date')
 
         if updates:
-            self.check_access_rule(cr, user, ids, 'write', context=context)
+            self.check_access_rule('write')
             query = 'UPDATE "%s" SET %s WHERE id IN %%s' % (
-                self._table, ','.join('"%s"=%s' % u[:2] for u in updates),
+                self._table, ','.join('"%s"=%s' % (u[0], u[1]) for u in updates),
             )
             params = tuple(u[2] for u in updates if len(u) > 2)
-            for sub_ids in cr.split_for_in_conditions(set(ids)):
+            for sub_ids in cr.split_for_in_conditions(set(self.ids)):
                 cr.execute(query, params + (sub_ids,))
                 if cr.rowcount != len(sub_ids):
                     raise MissingError(_('One of the records you are trying to modify has already been deleted (Document type: %s).') % self._description)
 
             # TODO: optimize
-            for f in direct:
-                column = self._columns[f]
+            for name in direct:
+                column = self._columns[name]
                 if callable(column.translate):
                     # The source value of a field has been modified,
                     # synchronize translated terms when possible.
-                    self.pool['ir.translation']._sync_terms_translations(
-                        cr, user, self._fields[f], recs, context=context)
+                    self.env['ir.translation']._sync_terms_translations(self._fields[name], self)
 
                 elif has_trans and column.translate:
                     # The translated value of a field has been modified.
-                    src_trans = self.pool[self._name].read(cr, user, ids, [f])[0][f]
+                    src_trans = self.read([name])[0][name]
                     if not src_trans:
                         # Insert value to DB
-                        src_trans = vals[f]
-                        context_wo_lang = dict(context, lang=None)
-                        self.write(cr, user, ids, {f: vals[f]}, context=context_wo_lang)
-                    translation_value = self._columns[f]._symbol_set[1](vals[f])
-                    self.pool['ir.translation']._set_ids(cr, user, self._name+','+f, 'model', context['lang'], ids, translation_value, src_trans)
+                        src_trans = vals[name]
+                        self.with_context(lang=None).write({name: src_trans})
+                    val = column._symbol_set[1](vals[name])
+                    tname = "%s,%s" % (self._name, name)
+                    self.env['ir.translation']._set_ids(
+                        tname, 'model', self.env.lang, self.ids, val, src_trans)
 
         # invalidate and mark new-style fields to recompute; do this before
         # setting other fields, because it can require the value of computed
         # fields, e.g., a one2many checking constraints on records
-        recs.modified(direct)
+        self.modified(direct)
+
+        # defaults in context must be removed when call a one2many or many2many
+        rel_context = {key: val
+                       for key, val in self._context.iteritems()
+                       if not key.startswith('default_')}
 
         # call the 'set' method of fields which are not classic_write
-        upd_todo.sort(lambda x, y: self._columns[x].priority-self._columns[y].priority)
-
-        # default element in context must be removed when call a one2many or many2many
-        rel_context = context.copy()
-        for c in context.items():
-            if c[0].startswith('default_'):
-                del rel_context[c[0]]
-
-        for field in upd_todo:
-            for id in ids:
-                result += self._columns[field].set(cr, self, id, field, vals[field], user, context=rel_context) or []
+        for name in sorted(upd_todo, key=lambda name: self._columns[name].priority):
+            column = self._columns[name]
+            for id in self.ids:
+                result_store += column.set(self._cr, self._model, id, name, vals[name],
+                                           self._uid, context=rel_context) or []
 
         # for recomputing new-style fields
-        recs.modified(upd_todo)
+        self.modified(upd_todo)
 
+        # write inherited fields on the corresponding parent records
         unknown_fields = set(updend)
-        for table, inherit_field in self._inherits.iteritems():
-            col = self._inherits[table]
-            nids = []
-            for sub_ids in cr.split_for_in_conditions(ids):
-                cr.execute('select distinct "'+col+'" from "'+self._table+'" ' \
-                           'where id IN %s', (sub_ids,))
-                nids.extend([x[0] for x in cr.fetchall()])
+        for parent_model, parent_field in self._inherits.iteritems():
+            parent_ids = []
+            for sub_ids in cr.split_for_in_conditions(self.ids):
+                query = "SELECT DISTINCT %s FROM %s WHERE id IN %%s" % (parent_field, self._table)
+                cr.execute(query, (sub_ids,))
+                parent_ids.extend([row[0] for row in cr.fetchall()])
 
-            v = {}
-            for fname in updend:
-                field = self._fields[fname]
-                if field.inherited and field.related[0] == inherit_field:
-                    v[fname] = vals[fname]
-                    unknown_fields.discard(fname)
-            if v:
-                self.pool[table].write(cr, user, nids, v, context)
+            parent_vals = {}
+            for name in updend:
+                field = self._fields[name]
+                if field.inherited and field.related[0] == parent_field:
+                    parent_vals[name] = vals[name]
+                    unknown_fields.discard(name)
+
+            if parent_vals:
+                self.env[parent_model].browse(parent_ids).write(parent_vals)
 
         if unknown_fields:
-            _logger.warning(
-                'No such field(s) in model %s: %s.',
-                self._name, ', '.join(unknown_fields))
+            _logger.warning('No such field(s) in model %s: %s.', self._name, ', '.join(unknown_fields))
 
         # check Python constraints
-        recs._validate_fields(vals)
+        self._validate_fields(vals)
 
         # TODO: use _order to set dest at the right position and not first node of parent
         # We can't defer parent_store computation because the stored function
@@ -4039,76 +4031,76 @@ class BaseModel(object):
             else:
                 parent_val = vals[self._parent_name]
                 if parent_val:
-                    clause, params = '%s=%%s' % (self._parent_name,), (parent_val,)
+                    clause, params = '%s=%%s' % self._parent_name, (parent_val,)
                 else:
-                    clause, params = '%s IS NULL' % (self._parent_name,), ()
+                    clause, params = '%s IS NULL' % self._parent_name, ()
 
                 for id in parents_changed:
-                    cr.execute('SELECT parent_left, parent_right FROM %s WHERE id=%%s' % (self._table,), (id,))
-                    pleft, pright = cr.fetchone()
-                    distance = pright - pleft + 1
+                    # determine old parent_left, parent_right of current record
+                    cr.execute('SELECT parent_left, parent_right FROM %s WHERE id=%%s' % self._table, (id,))
+                    pleft0, pright0 = cr.fetchone()
+                    width = pright0 - pleft0 + 1
 
-                    # Positions of current siblings, to locate proper insertion point;
-                    # this can _not_ be fetched outside the loop, as it needs to be refreshed
-                    # after each update, in case several nodes are sequentially inserted one
-                    # next to the other (i.e computed incrementally)
-                    cr.execute('SELECT parent_right, id FROM %s WHERE %s ORDER BY %s' % (self._table, clause, self._parent_order), params)
-                    parents = cr.fetchall()
-
-                    # Find Position of the element
-                    position = None
-                    for (parent_pright, parent_id) in parents:
-                        if parent_id == id:
+                    # determine new parent_left of current record; it comes
+                    # right after the parent_right of its closest left sibling
+                    # (this CANNOT be fetched outside the loop, as it needs to
+                    # be refreshed after each update, in case several nodes are
+                    # sequentially inserted one next to the other)
+                    pleft1 = None
+                    cr.execute('SELECT id, parent_right FROM %s WHERE %s ORDER BY %s' % \
+                               (self._table, clause, self._parent_order), params)
+                    for (sibling_id, sibling_parent_right) in cr.fetchall():
+                        if sibling_id == id:
                             break
-                        position = parent_pright and parent_pright + 1 or 1
-
-                    # It's the first node of the parent
-                    if not position:
+                        pleft1 = (sibling_parent_right or 0) + 1
+                    if not pleft1:
+                        # the current record is the first node of the parent
                         if not parent_val:
-                            position = 1
+                            pleft1 = 1
                         else:
-                            cr.execute('select parent_left from '+self._table+' where id=%s', (parent_val,))
-                            position = cr.fetchone()[0] + 1
+                            cr.execute('SELECT parent_left FROM %s WHERE id=%%s' % self._table, (parent_val,))
+                            pleft1 = cr.fetchone()[0] + 1
 
-                    if pleft < position <= pright:
+                    if pleft0 < pleft1 <= pright0:
                         raise UserError(_('Recursivity Detected.'))
 
-                    if pleft < position:
-                        cr.execute('update '+self._table+' set parent_left=parent_left+%s where parent_left>=%s', (distance, position))
-                        cr.execute('update '+self._table+' set parent_right=parent_right+%s where parent_right>=%s', (distance, position))
-                        cr.execute('update '+self._table+' set parent_left=parent_left+%s, parent_right=parent_right+%s where parent_left>=%s and parent_left<%s', (position-pleft, position-pleft, pleft, pright))
+                    # make some room for parent_left and parent_right at the new position
+                    cr.execute('UPDATE %s SET parent_left=parent_left+%%s WHERE %%s<=parent_left' % self._table, (width, pleft1))
+                    cr.execute('UPDATE %s SET parent_right=parent_right+%%s WHERE %%s<=parent_right' % self._table, (width, pleft1))
+                    # slide the subtree of the current record to its new position
+                    if pleft0 < pleft1:
+                        cr.execute('''UPDATE %s SET parent_left=parent_left+%%s, parent_right=parent_right+%%s
+                                      WHERE %%s<=parent_left AND parent_left<%%s''' % self._table,
+                                   (pleft1 - pleft0, pleft1 - pleft0, pleft0, pright0))
                     else:
-                        cr.execute('update '+self._table+' set parent_left=parent_left+%s where parent_left>=%s', (distance, position))
-                        cr.execute('update '+self._table+' set parent_right=parent_right+%s where parent_right>=%s', (distance, position))
-                        cr.execute('update '+self._table+' set parent_left=parent_left-%s, parent_right=parent_right-%s where parent_left>=%s and parent_left<%s', (pleft-position+distance, pleft-position+distance, pleft+distance, pright+distance))
-                    recs.invalidate_cache(['parent_left', 'parent_right'])
+                        cr.execute('''UPDATE %s SET parent_left=parent_left-%%s, parent_right=parent_right-%%s
+                                      WHERE %%s<=parent_left AND parent_left<%%s''' % self._table,
+                                   (pleft0 - pleft1 + width, pleft0 - pleft1 + width, pleft0 + width, pright0 + width))
 
-        result += self._store_get_values(cr, user, ids, vals.keys(), context)
+                self.invalidate_cache(['parent_left', 'parent_right'])
 
-        done = {}
-        recs.env.recompute_old.extend(result)
-        while recs.env.recompute_old:
-            sorted_recompute_old = sorted(recs.env.recompute_old)
-            recs.env.clear_recompute_old()
-            for __, model_name, ids_to_update, fields_to_recompute in \
-                    sorted_recompute_old:
-                key = (model_name, tuple(fields_to_recompute))
-                done.setdefault(key, {})
+        result_store += self._store_get_values(vals)
+
+        done = defaultdict(set)        # {(model, fields): ids}
+        self.env.recompute_old.extend(result_store)
+        while self.env.recompute_old:
+            sorted_recompute_old = sorted(self.env.recompute_old)
+            self.env.clear_recompute_old()
+            for order, model_name, ids, fnames in sorted_recompute_old:
+                key = (model_name, tuple(fnames))
                 # avoid to do several times the same computation
-                todo = []
-                for id in ids_to_update:
-                    if id not in done[key]:
-                        done[key][id] = True
-                        if id not in deleted_related[model_name]:
-                            todo.append(id)
-                self.pool[model_name]._store_set_values(
-                    cr, user, todo, fields_to_recompute, context)
+                ids = [id for id in ids
+                       if id not in done[key]
+                       if id not in deleted_related[model_name]]
+                done[key].update(ids)
+                recs = self.env[model_name].browse(ids)
+                recs._store_set_values(fnames)
 
         # recompute new-style fields
-        if recs.env.recompute and context.get('recompute', True):
-            recs.recompute()
+        if self.env.recompute and self._context.get('recompute', True):
+            self.recompute()
 
-        self.step_workflow(cr, user, ids, context=context)
+        self.step_workflow()
         return True
 
     #
