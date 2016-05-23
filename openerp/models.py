@@ -4348,40 +4348,41 @@ class BaseModel(object):
         self.create_workflow()
         return id_new
 
-    def _store_get_values(self, cr, uid, ids, fields, context):
-        """Returns an ordered list of fields.function to call due to
-           an update operation on ``fields`` of records with ``ids``,
-           obtained by calling the 'store' triggers of these fields,
-           as setup by their 'store' attribute.
+    @api.multi
+    def _store_get_values(self, fields):
+        """ Returns an ordered list of fields.function to call due to an update
+            operation on ``fields`` of records ``self``, obtained by calling the
+            'store' triggers of these fields, as setup by their 'store' attribute.
 
-           :return: [(priority, model_name, [record_ids,], [function_fields,])]
+            :return: [(priority, model_name, [record_ids,], [function_fields,])]
         """
-        if fields is None: fields = []
-        stored_functions = self.pool._store_function.get(self._name, [])
+        fields = fields or []
 
-        # use indexed names for the details of the stored_functions:
-        model_name_, func_field_to_compute_, target_ids_func_, trigger_fields_, priority_ = range(5)
+        # use indexed names for the details of the triggers:
+        MODEL, FUNC, TARGET_FUNC, FIELDS, PRIORITY = range(5)
 
         # only keep store triggers that should be triggered for the ``fields``
         # being written to.
-        triggers_to_compute = (
-            f for f in stored_functions
-            if not f[trigger_fields_] or set(fields).intersection(f[trigger_fields_])
-        )
+        triggers = [
+            trigger
+            for trigger in self.pool._store_function.get(self._name, [])
+            if not trigger[FIELDS] or set(fields).intersection(trigger[FIELDS])
+        ]
 
-        to_compute_map = {}
+        to_compute_map = defaultdict(lambda: defaultdict(set))
         target_id_results = {}
-        for store_trigger in triggers_to_compute:
-            target_func_id_ = id(store_trigger[target_ids_func_])
-            if target_func_id_ not in target_id_results:
+        for trigger in triggers:
+            target_func_id = id(trigger[TARGET_FUNC])
+            if target_func_id not in target_id_results:
                 # use admin user for accessing objects having rules defined on store fields
-                target_id_results[target_func_id_] = [i for i in store_trigger[target_ids_func_](self, cr, SUPERUSER_ID, ids, context) if i]
-            target_ids = target_id_results[target_func_id_]
+                ids = trigger[TARGET_FUNC](self._model, self._cr, SUPERUSER_ID, self.ids, self._context)
+                target_id_results[target_func_id] = filter(None, ids)
+            target_ids = target_id_results[target_func_id]
 
             # the compound key must consider the priority and model name
-            key = (store_trigger[priority_], store_trigger[model_name_])
+            key = (trigger[PRIORITY], trigger[MODEL])
             for target_id in target_ids:
-                to_compute_map.setdefault(key, {}).setdefault(target_id,set()).add(tuple(store_trigger))
+                to_compute_map[key][target_id].add(tuple(trigger))
 
         # Here to_compute_map looks like:
         # { (10, 'model_a') : { target_id1: [ (trigger_1_tuple, trigger_2_tuple) ], ... }
@@ -4392,102 +4393,94 @@ class BaseModel(object):
         # Now we need to generate the batch function calls list
         # call_map =
         #   { (10, 'model_a') : [(10, 'model_a', [record_ids,], [function_fields,])] }
-        call_map = {}
-        for ((priority,model), id_map) in to_compute_map.iteritems():
-            trigger_ids_maps = {}
+        call_map = defaultdict(list)
+        for ((priority, model), id_map) in to_compute_map.iteritems():
+            trigger_ids_maps = defaultdict(list)
             # function_ids_maps =
             #   { (function_1_tuple, function_2_tuple) : [target_id1, target_id2, ..] }
             for target_id, triggers in id_map.iteritems():
-                trigger_ids_maps.setdefault(tuple(triggers), []).append(target_id)
+                trigger_ids_maps[tuple(triggers)].append(target_id)
             for triggers, target_ids in trigger_ids_maps.iteritems():
-                call_map.setdefault((priority,model),[]).append((priority, model, target_ids,
-                                                                 [t[func_field_to_compute_] for t in triggers]))
-        result = []
-        if call_map:
-            result = reduce(operator.add, (call_map[k] for k in sorted(call_map)))
-        return result
+                call_map[(priority, model)].append((priority, model, target_ids, [t[FUNC] for t in triggers]))
 
-    def _store_set_values(self, cr, uid, ids, fields, context):
-        """Calls the fields.function's "implementation function" for all ``fields``, on records with ``ids`` (taking care of
-           respecting ``multi`` attributes), and stores the resulting values in the database directly."""
-        if not ids:
+        return list(itertools.chain.from_iterable(v for k, v in sorted(call_map.iteritems())))
+
+    @api.multi
+    def _store_set_values(self, fields):
+        """ Call the fields.function's "implementation function" for all
+            ``fields``, on records ``self`` (taking care of respecting ``multi``
+            attributes), and store the resulting values in the database directly.
+        """
+        if not self:
             return True
-        field_flag = False
-        field_dict = {}
+
+        from .fields import Datetime
+        cr = self._cr
+        field_dict = defaultdict(list)
         if self._log_access:
-            cr.execute('select id,write_date from '+self._table+' where id IN %s', (tuple(ids),))
-            res = cr.fetchall()
-            for r in res:
-                if r[1]:
-                    field_dict.setdefault(r[0], [])
-                    res_date = time.strptime((r[1])[:19], '%Y-%m-%d %H:%M:%S')
-                    write_date = datetime.datetime.fromtimestamp(time.mktime(res_date))
-                    for i in self.pool._store_function.get(self._name, []):
-                        if i[5]:
-                            up_write_date = write_date + datetime.timedelta(hours=i[5])
+            cr.execute('SELECT id, write_date FROM %s WHERE id IN %%s' % self._table, [tuple(self.ids)])
+            for id, write_date in cr.fetchall():
+                if write_date:
+                    write_date = Datetime.from_string(write_date)
+                    for trigger in self.pool._store_function.get(self._name, []):
+                        if trigger[5]:
+                            up_write_date = write_date + datetime.timedelta(hours=trigger[5])
                             if datetime.datetime.now() < up_write_date:
-                                if i[1] in fields:
-                                    field_dict[r[0]].append(i[1])
-                                    if not field_flag:
-                                        field_flag = True
-        todo = {}
-        keys = []
-        for f in fields:
-            if self._columns[f]._multi not in keys:
-                keys.append(self._columns[f]._multi)
-            todo.setdefault(self._columns[f]._multi, [])
-            todo[self._columns[f]._multi].append(f)
-        for key in keys:
-            val = todo[key]
+                                if trigger[1] in fields:
+                                    field_dict[id].append(trigger[1])
+
+        todo = defaultdict(list)
+        for name in fields:
+            todo[self._columns[name]._multi].append(name)
+
+        for key, names in todo.iteritems():
             if key:
+                column = self._columns[names[0]]
                 # use admin user for accessing objects having rules defined on store fields
-                result = self._columns[val[0]].get(cr, self, ids, val, SUPERUSER_ID, context=context)
-                for id, value in result.items():
-                    if field_flag:
-                        for f in value.keys():
-                            if f in field_dict[id]:
-                                value.pop(f)
+                result = column.get(cr, self._model, self.ids, names, SUPERUSER_ID, context=self._context)
+                for id, vals in result.iteritems():
+                    if field_dict:
+                        for name in field_dict[id]:
+                            vals.pop(name, None)
                     updates = []        # list of (column, pattern, value)
-                    for v in value:
-                        if v not in val:
+                    for name, val in vals.iteritems():
+                        if name not in names:
                             continue
-                        column = self._columns[v]
+                        column = self._columns[name]
                         if column._type == 'many2one':
                             try:
-                                value[v] = value[v][0]
+                                val = val[0]
                             except:
                                 pass
-                        updates.append((v, column._symbol_set[0], column._symbol_set[1](value[v])))
+                        setc, setf = column._symbol_set
+                        updates.append((name, setc, setf(val)))
                     if updates:
-                        query = 'UPDATE "%s" SET %s WHERE id = %%s' % (
+                        query = 'UPDATE "%s" SET %s WHERE id=%%s' % (
                             self._table, ','.join('"%s"=%s' % u[:2] for u in updates),
                         )
                         params = tuple(u[2] for u in updates)
                         cr.execute(query, params + (id,))
 
             else:
-                for f in val:
-                    column = self._columns[f]
+                for name in names:
+                    column = self._columns[name]
                     # use admin user for accessing objects having rules defined on store fields
-                    result = column.get(cr, self, ids, f, SUPERUSER_ID, context=context)
-                    for r in result.keys():
-                        if field_flag:
-                            if r in field_dict.keys():
-                                if f in field_dict[r]:
-                                    result.pop(r)
-                    for id, value in result.items():
+                    result = column.get(cr, self._model, self.ids, name, SUPERUSER_ID, context=self._context)
+                    for rid in result.keys():
+                        if rid in field_dict and name in field_dict[rid]:
+                            result.pop(rid)
+                    for id, val in result.iteritems():
                         if column._type == 'many2one':
                             try:
-                                value = value[0]
+                                val = val[0]
                             except:
                                 pass
-                        query = 'UPDATE "%s" SET "%s"=%s WHERE id = %%s' % (
-                            self._table, f, column._symbol_set[0],
-                        )
-                        cr.execute(query, (column._symbol_set[1](value), id))
+                        setc, setf = column._symbol_set
+                        query = 'UPDATE "%s" SET "%s"=%s WHERE id=%%s' % (self._table, name, setc)
+                        cr.execute(query, (setf(val), id))
 
         # invalidate and mark new-style fields to recompute
-        self.browse(cr, uid, ids, context).modified(fields)
+        self.modified(fields)
 
         return True
 
