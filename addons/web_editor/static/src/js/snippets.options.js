@@ -12,20 +12,19 @@ odoo.define('web_editor.snippets.options', function (require) {
     var qweb = core.qweb;
     var _t = core._t;
 
-    /* ----- Editor option (object link the the xml with data-js) ---- */
-
+    /**
+     * The SnippetOption class handles one option for one snippet. The registry returned by
+     * this module contains the names of the specialized SnippetOption which can be reference
+     * thanks to the data-js key of the full options web_editor template.
+     */
     var SnippetOption = Class.extend({
         init: function (BuildingBlock, editor, $target, option_id) {
             this.buildingBlock = BuildingBlock;
             this.editor = editor;
             this.$target = $target;
-            var option = this.buildingBlock.templateOptions[option_id];
-
-            var styles = this.$target.data("snippet-option-ids") || {};
-            styles[option_id] = this;
-            this.$target.data("snippet-option-ids", styles);
 
             this.option = option_id;
+            var option = this.buildingBlock.templateOptions[option_id];
             this.$el = option.$el.children("li").clone();
             this.data = option.$el.data();
 
@@ -40,51 +39,48 @@ odoo.define('web_editor.snippets.options', function (require) {
         _bind_li_menu: function () {
             this.$el.filter("li:hasData").find('a:first')
                 .off('mouseenter click')
-                .on('mouseenter click', _.bind(this._mouse, this));
+                .on('mouseenter click', _.bind(_mouse, this));
 
             this.$el
                 .off('mouseenter click', "li:hasData a")
-                .on('mouseenter click', "li:hasData a", _.bind(this._mouse, this));
+                .on('mouseenter click', "li:hasData a", _.bind(_mouse, this));
 
-            this.$el.closest("ul").add(this.$el)
-                .off('mouseleave')
-                .on('mouseleave', _.bind(this.reset, this));
+            this.$el.off('mouseleave')
+                    .on('mouseleave', _.bind(this.reset, this));
 
-            this.$el
-                .off('mouseleave', "ul")
-                .on('mouseleave', "ul", _.bind(this.reset, this));
+            this.$el.off('mouseleave', "ul")
+                    .on('mouseleave', "ul", _.bind(this.reset, this));
 
-            this.reset_methods = [];
+            this.methodsToReset = [];
+
+            function _mouse(event) {
+                var $next = $(event.currentTarget).parent();
+
+                // triggers preview or apply methods if a menu item has been clicked
+                this.select(event.type === "click" ? "click" : "over", $next);
+                if (event.type === 'click') {
+                    this.set_active();
+                    this.$target.trigger("snippet-option-change", [this]);
+                } else {
+                    this.$target.trigger("snippet-option-preview", [this]);
+                }
+            }
         },
 
         /**
-         * this method handles mouse:over and mouse:leave on the snippet editor menu
+         * The set_active method tweaks the option dropdown to show the selected value
+         * according to the state of the $target the option customizes.
          */
-         _time_mouseleave: null,
-        _mouse: function (event) {
-            var $next = $(event.currentTarget).parent();
-
-            // triggers preview or apply methods if a menu item has been clicked
-            this.select(event.type === "click" ? "click" : "over", $next);
-            if (event.type === 'click') {
-                this.set_active();
-                this.$target.trigger("snippet-option-change", [this]);
-            } else {
-                this.$target.trigger("snippet-option-preview", [this]);
-            }
-        },
-        /*
-        *  select and set item active or not (add highlight item and his parents)
-        *  called before start
-        */
         set_active: function () {
-            var classes = _.uniq((this.$target.attr("class") || '').split(/\s+/));
+            var self = this;
             this.$el.find('[data-toggle_class], [data-select_class]')
-                .add(this.$el)
-                .filter('[data-toggle_class], [data-select_class]')
+                .addBack('[data-toggle_class], [data-select_class]')
                 .removeClass("active")
-                .filter('[data-toggle_class="' + classes.join('"], [data-toggle_class="') + '"] ,'+
-                    '[data-select_class="' + classes.join('"], [data-select_class="') + '"]')
+                .filter(function () {
+                    var $elem = $(this);
+                    var className = $elem.data("toggle_class") || $elem.data("select_class");
+                    return self.$target.hasClass(className);
+                })
                 .addClass("active");
         },
 
@@ -98,131 +94,115 @@ odoo.define('web_editor.snippets.options', function (require) {
             this._bind_li_menu();
         },
 
-        on_blur : function () {
-        },
+        on_blur : function () {},
+        on_clone: function ($clone) {},
+        on_move: function () {},
+        on_remove: function () {},
 
-        on_clone: function ($clone) {
-        },
-
-        on_move: function () {
-        },
-
-        on_remove: function () {
-        },
-
-        drop_and_build_snippet: function () {
-        },
+        drop_and_build_snippet: function () {},
 
         reset: function () {
             var self = this;
-            var lis = self.$el.add(self.$el.find('li')).filter('.active').get();
-            lis.reverse();
-            _.each(lis, function (li) {
+            var lis = this.$el.find("li.active").addBack('.active').get();
+            _.each(lis.reverse(), function (li) {
                 var $li = $(li);
-                for (var k in self.reset_methods) {
-                    var method = self.reset_methods[k];
-                    if ($li.is('[data-'+method+']') || $li.closest('[data-'+method+']').size()) {
-                        delete self.reset_methods[k];
+                for (var k in self.methodsToReset) {
+                    var method = self.methodsToReset[k];
+                    if ($li.closest('[data-' + method + ']').length) {
+                        delete self.methodsToReset[k];
                     }
                 }
                 self.select("reset", $li);
             });
 
-            for (var k in self.reset_methods) {
-                var method = self.reset_methods[k];
+            for (var k in this.methodsToReset) {
+                var method = this.methodsToReset[k];
                 if (method) {
-                    self[method]("reset", null);
+                    this[method]("reset", null);
                 }
             }
-            self.reset_methods = [];
-            self.$target.trigger("snippet-option-reset", [this]);
+            this.methodsToReset = [];
+            this.$target.trigger("snippet-option-reset", [this]);
         },
 
-        // call data-method args as method (data-only can be used)
+        /**
+         * Handle action type on a particuler $li (sub)option of the option.
+         * @param type action type to handle ("click", "over", "reset")
+         * @param $li the suboption DOM element which is concerned by the action
+         */
         select: function (type, $li) {
-            var self = this,
-                $methods = [],
-                el = $li[0];
-
+            // (sub)options can say they respond to only one action type
             if ($li.data('only') && type !== $li.data('only')) {
                 return;
             }
-
-            if (type==="click") {
+            // If the type is click, the user selected the option for good (so reset and record action)
+            if (type === "click") {
                 this.reset();
                 this.buildingBlock.getParent().rte.historyRecordUndo(this.$target);
             }
 
-            function filter (k) { return k !== 'oeId' && k !== 'oeModel' && k !== 'oeField' && k !== 'oeXpath' && k !== 'oeSourceId' && k !== 'only';}
-            function hasData(el) {
-                for (var k in el.dataset) {
-                    if (filter (k)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-            function method(el) {
-                var data = {};
-                for (var k in el.dataset) {
-                    if (filter (k)) {
-                        data[k] = el.dataset[k];
-                    }
-                }
-                return data;
-            }
-
-            while (el && this.$el.is(el) || _.some(this.$el.map(function () {return $.contains(this, el);}).get()) ) {
-                if (hasData(el)) {
-                    $methods.push(el);
+            // Search for methods (data-...) (i.e. data-toggle_class) on the selected (sub)option and its parents
+            var el = $li[0];
+            var methods = [];
+            do {
+                var m = _.omit(el.dataset, ["oeId", "oeModel", "oeField", "oeXpath", "oeSourceId", "only"]);
+                if (_.keys(m).length) {
+                    methods.push([el, m]);
                 }
                 el = el.parentNode;
-            }
+            } while (this.$el.parent().has(el).length);
 
-            $methods.reverse();
-
-            _.each($methods, function (el) {
-                var $el = $(el);
-                var methods = method(el);
+            // Call the found method in the right order (parents -> child) and save them for later reset
+            var self = this;
+            _.each(methods.reverse(), function (data) {
+                var $el = $(data[0]);
+                var methods = data[1];
 
                 for (var k in methods) {
                     if (self[k]) {
-                        if (type !== "reset" && self.reset_methods.indexOf(k) === -1) {
-                            self.reset_methods.push(k);
+                        if (type !== "reset" && self.methodsToReset.indexOf(k) === -1) {
+                            self.methodsToReset.push(k);
                         }
                         self[k](type, methods[k], $el);
                     } else {
-                        console.error("'"+self.option+"' snippet have not method '"+k+"'");
+                        console.error("'" + self.option + "' snippet option have not method '" + k + "'");
                     }
                 }
             });
         },
 
-        // default method for snippet
+        /**
+         * Default option methods toggle_class and selected_class handle the two behavior of having a list
+         * of option classes to toggle or not and having a list of option classes where only one must be chosen.
+         */
         toggle_class: function (type, value, $li) {
-            var $lis = this.$el.find('[data-toggle_class]').add(this.$el).filter('[data-toggle_class]');
+            var $lis = this.$el.find("[data-toggle_class]").addBack("[data-toggle_class]");
 
-            function map ($lis) {
+            function map($lis) {
                 return $lis.map(function () {return $(this).data("toggle_class");}).get().join(" ");
             }
             var classes = map($lis);
             var active_classes = map($lis.filter('.active, :has(.active)'));
 
-            this.$target.removeClass(classes);
-            this.$target.addClass(active_classes);
-
+            this.$target.removeClass(classes).addClass(active_classes);
             if (type !== 'reset') {
                 this.$target.toggleClass(value);
             }
         },
         select_class: function (type, value, $li) {
-            var $lis = this.$el.find('[data-select_class]').add(this.$el).filter('[data-select_class]');
+            var $lis = this.$el.find("[data-select_class]").addBack("[data-select_class]");
 
-            var classes = $lis.map(function () {return $(this).data('select_class');}).get();
+            var classes = $lis.map(function () {return $(this).data("select_class");}).get().join(" ");
 
-            this.$target.removeClass(classes.join(" "));
-            if(value) this.$target.addClass(value);
+            this.$target.removeClass(classes);
+            if (value) {
+                this.$target.addClass(value);
+            }
         },
+
+        /**
+         * Helper method to evaluate the value expression directly as a function
+         */
         eval: function (type, value, $li) {
             var fn = new Function("node", "type", "value", "$li", value);
             fn.call(this, this, type, value, $li);
@@ -233,6 +213,11 @@ odoo.define('web_editor.snippets.options', function (require) {
     var registry = {};
 
     /* ----- default options ---- */
+
+    /**
+     * The colorpicker option is designed to change the background color class of a snippet. This class change the
+     * default background color and text color of the snippet content.
+     */
     registry.colorpicker = SnippetOption.extend({
         start: function () {
             var self = this;
@@ -322,6 +307,9 @@ odoo.define('web_editor.snippets.options', function (require) {
         }
     });
 
+    /**
+     * The background option is designed to change the background image of a snippet.
+     */
     registry.background = SnippetOption.extend({
         start: function ($change_target) {
             this.$target = $change_target || this.$target;
@@ -393,6 +381,9 @@ odoo.define('web_editor.snippets.options', function (require) {
         }
     });
 
+    /**
+     * The background_position option is designed to change the background image position of a snippet.
+     */
     registry.background_position = SnippetOption.extend({
         start: function () {
             this._super.apply(this, arguments);
@@ -700,7 +691,7 @@ odoo.define('web_editor.snippets.options', function (require) {
     });
 
     return {
-        registry: registry,
         Class: SnippetOption,
+        registry: registry,
     };
 });
