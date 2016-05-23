@@ -4160,200 +4160,192 @@ class BaseModel(object):
 
         return record
 
-    def _create(self, cr, user, vals, context=None):
+    @api.model
+    def _create(self, vals):
         # low-level implementation of create()
-        if not context:
-            context = {}
-
         if self.is_transient():
-            self._transient_vacuum(cr, user)
+            self._transient_vacuum()
 
-        tocreate = {}
-        for v in self._inherits:
-            if self._inherits[v] not in vals:
-                tocreate[v] = {}
-            else:
-                tocreate[v] = {'id': vals[self._inherits[v]]}
+        # data of parent records to create or update, by model
+        tocreate = {
+            parent_model: {'id': vals.pop(parent_field, None)}
+            for parent_model, parent_field in self._inherits.iteritems()
+        }
 
+        # list of column assignments defined as tuples like:
+        #   (column_name, format_string, column_value)
+        #   (column_name, sql_formula)
+        # Those tuples will be used by the string formatting for the INSERT
+        # statement below.
         updates = [
-            # list of column assignments defined as tuples like:
-            #   (column_name, format_string, column_value)
-            #   (column_name, sql_formula)
-            # Those tuples will be used by the string formatting for the INSERT
-            # statement below.
             ('id', "nextval('%s')" % self._sequence),
         ]
 
         upd_todo = []
         unknown_fields = []
-        for v in vals.keys():
-            if v in self._inherit_fields and v not in self._columns:
-                (table, col, col_detail, original_parent) = self._inherit_fields[v]
-                tocreate[table][v] = vals[v]
-                del vals[v]
-            else:
-                if (v not in self._inherit_fields) and (v not in self._columns):
-                    del vals[v]
-                    unknown_fields.append(v)
+        for name, val in vals.items():
+            field = self._fields.get(name)
+            if not field:
+                unknown_fields.append(name)
+                del vals[name]
+            elif field.inherited:
+                tocreate[field.related_field.model_name][name] = val
+                del vals[name]
+            elif not field.column:
+                del vals[name]
         if unknown_fields:
-            _logger.warning(
-                'No such field(s) in model %s: %s.',
-                self._name, ', '.join(unknown_fields))
+            _logger.warning('No such field(s) in model %s: %s.', self._name, ', '.join(unknown_fields))
 
-        for table in tocreate:
-            if self._inherits[table] in vals:
-                del vals[self._inherits[table]]
-
-            record_id = tocreate[table].pop('id', None)
-
-            if record_id is None or not record_id:
-                record_id = self.pool[table].create(cr, user, tocreate[table], context=context)
+        # create or update parent records
+        for parent_model, parent_vals in tocreate.iteritems():
+            parent_id = parent_vals.pop('id')
+            if not parent_id:
+                parent_id = self.env[parent_model].create(parent_vals).id
             else:
-                self.pool[table].write(cr, user, [record_id], tocreate[table], context=context)
+                self.env[parent_model].browse(parent_id).write(parent_vals)
+            updates.append((self._inherits[parent_model], '%s', parent_id))
 
-            updates.append((self._inherits[table], '%s', record_id))
+        # set boolean fields to False by default (to make search more powerful)
+        for name, field in self._fields.iteritems():
+            if field.type == 'boolean' and field.store and name not in vals:
+                vals[name] = False
 
-        #Start : Set bool fields to be False if they are not touched(to make search more powerful)
-        bool_fields = [x for x in self._columns.keys() if self._columns[x]._type=='boolean']
-
-        for bool_field in bool_fields:
-            if bool_field not in vals:
-                vals[bool_field] = False
-        #End
-        for field in vals.keys():
-            fobj = None
-            if field in self._columns:
-                fobj = self._columns[field]
-            else:
-                fobj = self._inherit_fields[field][2]
-            if not fobj:
-                continue
-        for field in vals:
-            column = self._columns[field]
+        # determine SQL values
+        for name, val in vals.iteritems():
+            column = self._columns[name]
             if column._classic_write:
-                updates.append((field, column._symbol_set[0], column._symbol_set[1](vals[field])))
+                setc, setf = column._symbol_set
+                updates.append((name, setc, setf(val)))
 
-                #for the function fields that receive a value, we set them directly in the database
-                #(they may be required), but we also need to trigger the _fct_inv()
+                # for the function fields that receive a value, we set them
+                # directly in the database (they may be required), but we also
+                # need to trigger the _fct_inv()
                 if (hasattr(column, '_fnct_inv')) and not isinstance(column, fields.related):
-                    #TODO: this way to special case the related fields is really creepy but it shouldn't be changed at
-                    #one week of the release candidate. It seems the only good way to handle correctly this is to add an
-                    #attribute to make a field `really readonly´ and thus totally ignored by the create()... otherwise
-                    #if, for example, the related has a default value (for usability) then the fct_inv is called and it
-                    #may raise some access rights error. Changing this is a too big change for now, and is thus postponed
-                    #after the release but, definitively, the behavior shouldn't be different for related and function
-                    #fields.
-                    upd_todo.append(field)
-            else:
-                #TODO: this `if´ statement should be removed because there is no good reason to special case the fields
-                #related. See the above TODO comment for further explanations.
-                if not isinstance(column, fields.related):
-                    upd_todo.append(field)
-            if hasattr(column, 'selection') and vals[field]:
-                self._check_selection_field_value(cr, user, field, vals[field], context=context)
+                    # TODO: this way to special case the related fields is
+                    # really creepy but it shouldn't be changed at one week of
+                    # the release candidate. It seems the only good way to
+                    # handle correctly this is to add an attribute to make a
+                    # field `really readonly´ and thus totally ignored by the
+                    # create()... otherwise if, for example, the related has a
+                    # default value (for usability) then the fct_inv is called
+                    # and it may raise some access rights error. Changing this
+                    # is a too big change for now, and is thus postponed after
+                    # the release but, definitively, the behavior shouldn't be
+                    # different for related and function fields.
+                    upd_todo.append(name)
+            elif not isinstance(column, fields.related):
+                # TODO: this special case should be removed because there is no
+                # good reason to special case the fields related. See the above
+                # comment for further explanations.
+                upd_todo.append(name)
+
+            if hasattr(column, 'selection') and val:
+                self._check_selection_field_value(name, val)
+
         if self._log_access:
-            updates.append(('create_uid', '%s', user))
-            updates.append(('write_uid', '%s', user))
+            updates.append(('create_uid', '%s', self._uid))
+            updates.append(('write_uid', '%s', self._uid))
             updates.append(('create_date', "(now() at time zone 'UTC')"))
             updates.append(('write_date', "(now() at time zone 'UTC')"))
 
-        # the list of tuples used in this formatting corresponds to
-        # tuple(field_name, format, value)
-        # In some case, for example (id, create_date, write_date) we does not
-        # need to read the third value of the tuple, because the real value is
-        # encoded in the second value (the format).
-        cr.execute(
-            """INSERT INTO "%s" (%s) VALUES(%s) RETURNING id""" % (
+        # insert a row for this record
+        cr = self._cr
+        query = """INSERT INTO "%s" (%s) VALUES(%s) RETURNING id""" % (
                 self._table,
                 ', '.join('"%s"' % u[0] for u in updates),
-                ', '.join(u[1] for u in updates)
-            ),
-            tuple([u[2] for u in updates if len(u) > 2])
-        )
+                ', '.join(u[1] for u in updates),
+            )
+        cr.execute(query, tuple(u[2] for u in updates if len(u) > 2))
 
+        # from now on, self is the new record
         id_new, = cr.fetchone()
-        recs = self.browse(cr, user, id_new, context)
+        self = self.browse(id_new)
 
-        if context.get('lang') and context['lang'] != 'en_US':
-            # add translations for context['lang']
-            for field in vals:
-                column = self._columns[field]
+        if self.env.lang and self.env.lang != 'en_US':
+            # add translations for self.env.lang
+            for name, val in vals.iteritems():
+                column = self._columns[name]
                 if column._classic_write and column.translate and not callable(column.translate):
-                    self.pool['ir.translation']._set_ids(
-                        cr, user, self._name+','+field, 'model',
-                        context['lang'], recs.ids, vals[field], vals[field],
-                    )
+                    tname = "%s,%s" % (self._name, name)
+                    self.env['ir.translation']._set_ids(tname, 'model', self.env.lang, self.ids, val, val)
 
-        if self._parent_store and not context.get('defer_parent_store_computation'):
+        if self._parent_store and not self._context.get('defer_parent_store_computation'):
             if self.pool._init:
                 self.pool._init_parent[self._name] = True
             else:
-                parent = vals.get(self._parent_name, False)
-                if parent:
-                    cr.execute('select parent_right from '+self._table+' where '+self._parent_name+'=%s order by '+self._parent_order, (parent,))
-                    pleft_old = None
-                    result_p = cr.fetchall()
-                    for (pleft,) in result_p:
-                        if not pleft:
+                parent_val = vals.get(self._parent_name)
+                if parent_val:
+                    # determine parent_left: it comes right after the
+                    # parent_right of its closest left sibling
+                    pleft = None
+                    cr.execute("SELECT parent_right FROM %s WHERE %s=%%s ORDER BY %s" % \
+                                    (self._table, self._parent_name, self._parent_order),
+                               (parent_val,))
+                    for (pright,) in cr.fetchall():
+                        if not pright:
                             break
-                        pleft_old = pleft
-                    if not pleft_old:
-                        cr.execute('select parent_left from '+self._table+' where id=%s', (parent,))
-                        pleft_old = cr.fetchone()[0]
-                    pleft = pleft_old
+                        pleft = pright + 1
+                    if not pleft:
+                        # this is the leftmost child of its parent
+                        cr.execute("SELECT parent_left FROM %s WHERE id=%%s" % self._table, (parent_val,))
+                        pleft = cr.fetchone()[0] + 1
                 else:
-                    cr.execute('select max(parent_right) from '+self._table)
-                    pleft = cr.fetchone()[0] or 0
-                cr.execute('update '+self._table+' set parent_left=parent_left+2 where parent_left>%s', (pleft,))
-                cr.execute('update '+self._table+' set parent_right=parent_right+2 where parent_right>%s', (pleft,))
-                cr.execute('update '+self._table+' set parent_left=%s,parent_right=%s where id=%s', (pleft+1, pleft+2, id_new))
-                recs.invalidate_cache(['parent_left', 'parent_right'])
+                    # determine parent_left: it comes after all top-level parent_right
+                    cr.execute("SELECT MAX(parent_right) FROM %s" % self._table)
+                    pleft = (cr.fetchone()[0] or 0) + 1
+
+                # make some room for the new node, and insert it in the MPTT
+                cr.execute("UPDATE %s SET parent_left=parent_left+2 WHERE parent_left>=%%s" % self._table,
+                           (pleft,))
+                cr.execute("UPDATE %s SET parent_right=parent_right+2 WHERE parent_right>=%%s" % self._table,
+                           (pleft,))
+                cr.execute("UPDATE %s SET parent_left=%%s, parent_right=%%s WHERE id=%%s" % self._table,
+                           (pleft, pleft + 1, id_new))
+                self.invalidate_cache(['parent_left', 'parent_right'])
 
         # invalidate and mark new-style fields to recompute; do this before
         # setting other fields, because it can require the value of computed
         # fields, e.g., a one2many checking constraints on records
-        recs.modified(self._fields)
+        self.modified(self._fields)
+
+
+        # defaults in context must be removed when call a one2many or many2many
+        rel_context = {key: val
+                       for key, val in self._context.iteritems()
+                       if not key.startswith('default_')}
 
         # call the 'set' method of fields which are not classic_write
-        upd_todo.sort(lambda x, y: self._columns[x].priority-self._columns[y].priority)
-
-        # default element in context must be remove when call a one2many or many2many
-        rel_context = context.copy()
-        for c in context.items():
-            if c[0].startswith('default_'):
-                del rel_context[c[0]]
-
-        result = []
-        for field in upd_todo:
-            result += self._columns[field].set(cr, self, id_new, field, vals[field], user, rel_context) or []
+        result_store = []
+        for name in sorted(upd_todo, key=lambda name: self._columns[name].priority):
+            column = self._columns[name]
+            result_store += column.set(self._cr, self._model, id_new, name, vals[name],
+                                       self._uid, context=rel_context) or []
 
         # for recomputing new-style fields
-        recs.modified(upd_todo)
+        self.modified(upd_todo)
 
         # check Python constraints
-        recs._validate_fields(vals)
+        self._validate_fields(vals)
 
-        result += self._store_get_values(cr, user, [id_new],
-                list(set(vals.keys() + self._inherits.values())),
-                context)
-        recs.env.recompute_old.extend(result)
+        result_store += self._store_get_values(list(set(vals.keys() + self._inherits.values())))
+        self.env.recompute_old.extend(result_store)
 
-        if recs.env.recompute and context.get('recompute', True):
+        if self.env.recompute and self._context.get('recompute', True):
             done = []
-            while recs.env.recompute_old:
-                sorted_recompute_old = sorted(recs.env.recompute_old)
-                recs.env.clear_recompute_old()
-                for __, model_name, ids, fields2 in sorted_recompute_old:
-                    if not (model_name, ids, fields2) in done:
-                        self.pool[model_name]._store_set_values(
-                            cr, user, ids, fields2, context)
-                        done.append((model_name, ids, fields2))
+            while self.env.recompute_old:
+                sorted_recompute_old = sorted(self.env.recompute_old)
+                self.env.clear_recompute_old()
+                for order, model_name, ids, fnames in sorted_recompute_old:
+                    if (model_name, ids, fnames) not in done:
+                        recs = self.env[model_name].browse(ids)
+                        recs._store_set_values(fnames)
+                        done.append((model_name, ids, fnames))
 
             # recompute new-style fields
-            recs.recompute()
+            self.recompute()
 
-        self.check_access_rule(cr, user, [id_new], 'create', context=context)
-        self.create_workflow(cr, user, [id_new], context=context)
+        self.check_access_rule('create')
+        self.create_workflow()
         return id_new
 
     def _store_get_values(self, cr, uid, ids, fields, context):
