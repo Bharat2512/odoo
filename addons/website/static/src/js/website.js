@@ -37,7 +37,7 @@ odoo.define('website.website', function (require) {
 
     /* ----------------------------------------------------
        Widgets
-       ---------------------------------------------------- */ 
+       ---------------------------------------------------- */
     var prompt = function (options, _qweb) {
         /**
          * A bootstrapped version of prompt() albeit asynchronous
@@ -168,7 +168,7 @@ odoo.define('website.website', function (require) {
 
     ajax.loadXML('/website/static/src/xml/website.xml', qweb);
     ajax.loadXML('/web/static/src/xml/base_common.xml', qweb);
-    
+
     base.ready().then(function () {
         data.topBar = new TopBar();
         return data.topBar.attachTo($("#oe_main_menu_navbar"));
