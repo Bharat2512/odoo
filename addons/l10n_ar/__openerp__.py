@@ -22,7 +22,4 @@ Plan contable argentino e impuestos de acuerdo a disposiciones vigentes
         'data/account_tax_data.xml',
         'data/account_chart_template_data.yml',
     ],
-    'demo': [],
-    'active': False,
-    'installable': True,
 }
