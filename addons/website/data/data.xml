@@ -222,5 +222,121 @@
             <field name="url">/website/static/src/img/library/business_hands.jpg</field>
         </record>
 
+        <!-- Website Builder Images -->
+        <record id="website.s_background_image_01" model="ir.attachment">
+            <field name="name">Website Background Image 01</field>
+            <field name="datas_fname">s_background_image_01.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/aqua.jpg</field>
+        </record>
+        <record id="website.s_background_image_02" model="ir.attachment">
+            <field name="name">Website Background Image 02</field>
+            <field name="datas_fname">s_background_image_02.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/baby_blue.jpg</field>
+        </record>
+        <record id="website.s_background_image_03" model="ir.attachment">
+            <field name="name">Website Background Image 03</field>
+            <field name="datas_fname">s_background_image_03.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/black.jpg</field>
+        </record>
+        <record id="website.s_background_image_04" model="ir.attachment">
+            <field name="name">Website Background Image 04</field>
+            <field name="datas_fname">s_background_image_04.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/business_guy.jpg</field>
+        </record>
+        <record id="website.s_background_image_05" model="ir.attachment">
+            <field name="name">Website Background Image 05</field>
+            <field name="datas_fname">s_background_image_05.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/color_splash.jpg</field>
+        </record>
+        <record id="website.s_background_image_06" model="ir.attachment">
+            <field name="name">Website Background Image 06</field>
+            <field name="datas_fname">s_background_image_06.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/flower_field.jpg</field>
+        </record>
+        <record id="website.s_background_image_07" model="ir.attachment">
+            <field name="name">Website Background Image 07</field>
+            <field name="datas_fname">s_background_image_07.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/flower.jpg</field>
+        </record>
+        <record id="website.s_background_image_08" model="ir.attachment">
+            <field name="name">Website Background Image 08</field>
+            <field name="datas_fname">s_background_image_08.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/greenfields.jpg</field>
+        </record>
+        <record id="website.s_background_image_09" model="ir.attachment">
+            <field name="name">Website Background Image 09</field>
+            <field name="datas_fname">s_background_image_09.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/landscape.jpg</field>
+        </record>
+        <record id="website.s_background_image_10" model="ir.attachment">
+            <field name="name">Website Background Image 10</field>
+            <field name="datas_fname">s_background_image_10.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/mango.jpg</field>
+        </record>
+        <record id="website.s_background_image_11" model="ir.attachment">
+            <field name="name">Website Background Image 11</field>
+            <field name="datas_fname">s_background_image_11.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/mountains.jpg</field>
+        </record>
+        <record id="website.s_background_image_12" model="ir.attachment">
+            <field name="name">Website Background Image 12</field>
+            <field name="datas_fname">s_background_image_12.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/orange_red.jpg</field>
+        </record>
+        <record id="website.s_background_image_13" model="ir.attachment">
+            <field name="name">Website Background Image 13</field>
+            <field name="datas_fname">s_background_image_13.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/parallax_flowers.jpg</field>
+        </record>
+        <record id="website.s_background_image_14" model="ir.attachment">
+            <field name="name">Website Background Image 14</field>
+            <field name="datas_fname">s_background_image_14.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/parallax_girl.jpg</field>
+        </record>
+        <record id="website.s_background_image_15" model="ir.attachment">
+            <field name="name">Website Background Image 15</field>
+            <field name="datas_fname">s_background_image_15.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/parallax_quote.png</field>
+        </record>
+        <record id="website.s_background_image_16" model="ir.attachment">
+            <field name="name">Website Background Image 16</field>
+            <field name="datas_fname">s_background_image_16.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/velour.jpg</field>
+        </record>
+        <record id="website.s_background_image_17" model="ir.attachment">
+            <field name="name">Website Background Image 17</field>
+            <field name="datas_fname">s_background_image_17.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/wood.jpg</field>
+        </record>
+        <record id="website.s_background_image_18" model="ir.attachment">
+            <field name="name">Website Background Image 18</field>
+            <field name="datas_fname">s_background_image_18.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/website/static/src/img/backgrounds/yellow_green.jpg</field>
+        </record>
+
+        <record id="website.s_cover_default_image" model="ir.attachment">
+            <field name="name">Cover Snippet - Default Image</field>
+            <field name="datas_fname">s_cover_default_image.jpg</field>
+            <field name="type">url</field>
+            <field name="url">/web/image/website.s_background_image_01</field>
+        </record>
     </data>
 </openerp>
