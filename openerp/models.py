@@ -4518,55 +4518,51 @@ class BaseModel(object):
             raise UserError(_('Invalid "order" specified. A valid "order" specification is a comma-separated list of valid field names (optionally followed by asc/desc for the direction)'))
         return True
 
-    def _apply_ir_rules(self, cr, uid, query, mode='read', context=None):
+    @api.model
+    def _apply_ir_rules(self, query, mode='read'):
         """Add what's missing in ``query`` to implement all appropriate ir.rules
           (using the ``model_name``'s rules or the current model's rules if ``model_name`` is None)
 
            :param query: the current query object
         """
-        if uid == SUPERUSER_ID:
+        if self._uid == SUPERUSER_ID:
             return
 
-        def apply_rule(added_clause, added_params, added_tables, parent_model=None):
+        def apply_rule(clauses, params, tables, parent_model=None):
             """ :param parent_model: name of the parent model, if the added
                     clause comes from a parent model
             """
-            if added_clause:
+            if clauses:
                 if parent_model:
-                    # as inherited rules are being applied, we need to add the missing JOIN
-                    # to reach the parent table (if it was not JOINed yet in the query)
-                    parent_alias = self._inherits_join_add(self, parent_model, query)
-                    # inherited rules are applied on the external table -> need to get the alias and replace
-                    parent_table = self.pool[parent_model]._table
-                    added_clause = [clause.replace('"%s"' % parent_table, '"%s"' % parent_alias) for clause in added_clause]
-                    # change references to parent_table to parent_alias, because we now use the alias to refer to the table
-                    new_tables = []
-                    for table in added_tables:
-                        # table is just a table name -> switch to the full alias
-                        if table == '"%s"' % parent_table:
-                            new_tables.append('"%s" as "%s"' % (parent_table, parent_alias))
-                        # table is already a full statement -> replace reference to the table to its alias, is correct with the way aliases are generated
-                        else:
-                            new_tables.append(table.replace('"%s"' % parent_table, '"%s"' % parent_alias))
-                    added_tables = new_tables
-                query.where_clause += added_clause
-                query.where_clause_params += added_params
-                for table in added_tables:
+                    # as inherited rules are being applied, we need to add the
+                    # missing JOIN to reach the parent table (if not JOINed yet)
+                    parent_table = '"%s"' % self.env[parent_model]._table
+                    parent_alias = '"%s"' % self._inherits_join_add(self, parent_model, query)
+                    # inherited rules are applied on the external table, replace
+                    # parent_table by parent_alias
+                    clauses = [clause.replace(parent_table, parent_alias) for clause in clauses]
+                    # replace parent_table by parent_alias, and introduce
+                    # parent_alias if needed
+                    tables = [
+                        (parent_table + ' as ' + parent_alias) if table == parent_table \
+                            else table.replace(parent_table, parent_alias)
+                        for table in tables
+                    ]
+                query.where_clause += clauses
+                query.where_clause_params += params
+                for table in tables:
                     if table not in query.tables:
                         query.tables.append(table)
-                return True
-            return False
 
         # apply main rules on the object
-        rule_obj = self.pool.get('ir.rule')
-        rule_where_clause, rule_where_clause_params, rule_tables = rule_obj.domain_get(cr, uid, self._name, mode, context=context)
-        apply_rule(rule_where_clause, rule_where_clause_params, rule_tables)
+        Rule = self.env['ir.rule']
+        where_clause, where_params, tables = Rule.domain_get(self._name, mode)
+        apply_rule(where_clause, where_params, tables)
 
         # apply ir.rules from the parents (through _inherits)
-        for inherited_model in self._inherits:
-            rule_where_clause, rule_where_clause_params, rule_tables = rule_obj.domain_get(cr, uid, inherited_model, mode, context=context)
-            apply_rule(rule_where_clause, rule_where_clause_params, rule_tables,
-                       parent_model=inherited_model)
+        for parent_model in self._inherits:
+            where_clause, where_params, tables = Rule.domain_get(parent_model, mode)
+            apply_rule(where_clause, where_params, tables, parent_model)
 
     @api.model
     def _generate_translated_field(self, table_alias, field, query):
