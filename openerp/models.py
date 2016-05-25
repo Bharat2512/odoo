@@ -4818,68 +4818,63 @@ class BaseModel(object):
 
         return default
 
+    @api.v7
     def copy_translations(self, cr, uid, old_id, new_id, context=None):
-        if context is None:
-            context = {}
+        old = self.browse(cr, uid, old_id, context)
+        new = self.browse(cr, uid, new_id, context)
+        BaseModel.copy_translations(old, new)
 
+    @api.v8
+    def copy_translations(old, new):
         # avoid recursion through already copied records in case of circular relationship
-        if '__copy_translations_seen' not in context:
-            context = dict(context, __copy_translations_seen=defaultdict(list))
-        seen_map = context['__copy_translations_seen']
-        if old_id in seen_map[self._name]:
+        if '__copy_translations_seen' not in old._context:
+            old = old.with_context(__copy_translations_seen=defaultdict(set))
+        seen_map = old._context['__copy_translations_seen']
+        if old.id in seen_map[old._name]:
             return
-        seen_map[self._name].append(old_id)
+        seen_map[old._name].add(old.id)
 
-        trans_obj = self.pool.get('ir.translation')
+        def get_trans(field, old, new):
+            """ Return the 'name' of the translations to search for, together
+                with the record ids corresponding to ``old`` and ``new``.
+            """
+            if field.inherited:
+                pname = field.related[0]
+                return get_trans(field.related_field, old[pname], new[pname])
+            return "%s,%s" % (field.model_name, field.name), old.id, new.id
 
-        for field_name, field in self._fields.iteritems():
+        # removing the lang to compare untranslated values
+        old_wo_lang, new_wo_lang = (old + new).with_context(lang=None)
+        Translation = old.env['ir.translation']
+
+        for name, field in old._fields.iteritems():
             if not field.copy:
                 continue
-            # removing the lang to compare untranslated values
-            context_wo_lang = dict(context, lang=None)
-            old_record, new_record = self.browse(cr, uid, [old_id, new_id], context=context_wo_lang)
-            # we must recursively copy the translations for o2o and o2m
-            if field.type == 'one2many':
-                target_obj = self.pool[field.comodel_name]
-                # here we rely on the order of the ids to match the translations
-                # as foreseen in copy_data()
-                old_children = sorted(r.id for r in old_record[field_name])
-                new_children = sorted(r.id for r in new_record[field_name])
-                for (old_child, new_child) in zip(old_children, new_children):
-                    target_obj.copy_translations(cr, uid, old_child, new_child, context=context)
-            # and for translatable fields we keep them for copy
-            elif getattr(field, 'translate', False):
-                if field_name in self._columns:
-                    trans_name = self._name + "," + field_name
-                    target_id = new_id
-                    source_id = old_id
-                elif field_name in self._inherit_fields:
-                    trans_name = self._inherit_fields[field_name][0] + "," + field_name
-                    # get the id of the parent record to set the translation
-                    inherit_field_name = self._inherit_fields[field_name][1]
-                    target_id = new_record[inherit_field_name].id
-                    source_id = old_record[inherit_field_name].id
-                else:
-                    continue
 
-                trans_ids = trans_obj.search(cr, uid, [
-                        ('name', '=', trans_name),
-                        ('res_id', '=', source_id)
-                ])
-                user_lang = context.get('lang')
-                for record in trans_obj.read(cr, uid, trans_ids, context=context):
-                    del record['id']
-                    # remove source to avoid triggering _set_src
-                    del record['source']
-                    # duplicated record is not linked to any module
-                    del record['module']
-                    record.update({'res_id': target_id})
-                    if user_lang and user_lang == record['lang']:
+            if field.type == 'one2many':
+                # we must recursively copy the translations for o2m; here we
+                # rely on the order of the ids to match the translations as
+                # foreseen in copy_data()
+                old_lines = old[name].sorted(key='id')
+                new_lines = new[name].sorted(key='id')
+                for (old_line, new_line) in zip(old_lines, new_lines):
+                    old_line.copy_translations(new_line)
+
+            elif getattr(field, 'translate', False):
+                # for translatable fields we copy their translations
+                trans_name, source_id, target_id = get_trans(field, old, new)
+                domain = [('name', '=', trans_name), ('res_id', '=', source_id)]
+                for vals in Translation.search_read(domain):
+                    del vals['id']
+                    del vals['source']      # remove source to avoid triggering _set_src
+                    del vals['module']      # duplicated vals is not linked to any module
+                    vals['res_id'] = target_id
+                    if vals['lang'] == old.env.lang:
                         # 'source' to force the call to _set_src
                         # 'value' needed if value is changed in copy(), want to see the new_value
-                        record['source'] = old_record[field_name]
-                        record['value'] = new_record[field_name]
-                    trans_obj.create(cr, uid, record, context=context)
+                        vals['source'] = old_wo_lang[name]
+                        vals['value'] = new_wo_lang[name]
+                    Translation.create(vals)
 
     @api.returns('self', lambda value: value.id)
     def copy(self, cr, uid, id, default=None, context=None):
