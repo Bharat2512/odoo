@@ -4485,7 +4485,8 @@ class BaseModel(object):
         return True
 
     # TODO: ameliorer avec NULL
-    def _where_calc(self, cr, user, domain, active_test=True, context=None):
+    @api.model
+    def _where_calc(self, domain, active_test=True):
         """Computes the WHERE clause needed to implement an OpenERP domain.
         :param domain: the domain to compute
         :type domain: list
@@ -4494,25 +4495,19 @@ class BaseModel(object):
         :return: the query expressing the given domain as provided in domain
         :rtype: osv.query.Query
         """
-        if not context:
-            context = {}
-        domain = domain[:]
         # if the object has a field named 'active', filter out all inactive
         # records unless they were explicitely asked for
-        if 'active' in self._fields and active_test and context.get('active_test', True):
-            if domain:
-                # the item[0] trick below works for domain items and '&'/'|'/'!'
-                # operators too
-                if not any(item[0] == 'active' for item in domain):
-                    domain.insert(0, ('active', '=', 1))
-            else:
-                domain = [('active', '=', 1)]
+        if 'active' in self._fields and active_test and self._context.get('active_test', True):
+            # the item[0] trick below works for domain items and '&'/'|'/'!'
+            # operators too
+            if not any(item[0] == 'active' for item in domain):
+                domain = [('active', '=', 1)] + domain
 
         if domain:
-            e = expression.expression(cr, user, domain, self, context)
+            e = expression.expression(self._cr, self._uid, domain, self._model, self._context)
             tables = e.get_tables()
             where_clause, where_params = e.to_sql()
-            where_clause = where_clause and [where_clause] or []
+            where_clause = [where_clause] if where_clause else []
         else:
             where_clause, where_params, tables = [], [], ['"%s"' % self._table]
 
