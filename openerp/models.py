@@ -4603,23 +4603,24 @@ class BaseModel(object):
 
         :return: the qualified field name to use in an ORDER BY clause to sort by ``order_field``
         """
-        if order_field not in self._columns and order_field in self._inherit_fields:
+        field = self._fields[order_field]
+        if field.inherited:
             # also add missing joins for reaching the table containing the m2o field
-            order_field_column = self._inherit_fields[order_field][2]
             qualified_field = self._inherits_join_calc(alias, order_field, query)
             alias, order_field = qualified_field.replace('"', '').split('.', 1)
+            column = field.base_field.column
         else:
-            order_field_column = self._columns[order_field]
+            column = field.column
 
-        assert order_field_column._type == 'many2one', 'Invalid field passed to _generate_m2o_order_by()'
-        if not order_field_column._classic_write and not getattr(order_field_column, 'store', False):
+        assert field.type == 'many2one', 'Invalid field passed to _generate_m2o_order_by()'
+        if not (column and column._classic_write):
             _logger.debug("Many2one function/related fields must be stored "
                           "to be used as ordering fields! Ignoring sorting for %s.%s",
                           self._name, order_field)
             return []
 
         # figure out the applicable order_by for the m2o
-        dest_model = self.env[order_field_column._obj]
+        dest_model = self.env[field.comodel_name]
         m2o_order = dest_model._order
         if not regex_order.match(m2o_order):
             # _order is complex, can't use it here, so we default to _rec_name
@@ -4628,9 +4629,9 @@ class BaseModel(object):
         # Join the dest m2o table if it's not joined yet. We use [LEFT] OUTER join here
         # as we don't want to exclude results that have NULL values for the m2o
         join = (alias, dest_model._table, order_field, 'id', order_field)
-        dst_alias, dst_alias_statement = query.add_join(join, implicit=False, outer=True)
-        return dest_model._generate_order_by_inner(dst_alias, m2o_order, query,
-                                                   reverse_direction=reverse_direction, seen=seen)
+        dest_alias, _ = query.add_join(join, implicit=False, outer=True)
+        return dest_model._generate_order_by_inner(dest_alias, m2o_order, query,
+                                                   reverse_direction, seen)
 
     @api.model
     def _generate_order_by_inner(self, alias, order_spec, query, reverse_direction=False, seen=None):
