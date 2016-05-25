@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp import models, api, fields
-from openerp.tools.translate import _
+from odoo import api, fields, models, _
 
-from openerp.exceptions import ValidationError
+from odoo.exceptions import ValidationError
 
 
 class ResCompany(models.Model):
@@ -154,10 +153,9 @@ class SaleOrder(models.Model):
     @api.multi
     def action_view_task(self):
         self.ensure_one()
-        imd = self.env['ir.model.data']
-        action = imd.xmlid_to_object('project.action_view_task')
-        list_view_id = imd.xmlid_to_res_id('project.view_task_tree2')
-        form_view_id = imd.xmlid_to_res_id('project.view_task_form2')
+        action = self.env.ref('project.action_view_task')
+        list_view_id = self.env.ref('project.view_task_tree2').id
+        form_view_id = self.env.ref('project.view_task_form2').id
 
         result = {
             'name': action.name,
@@ -186,9 +184,8 @@ class SaleOrder(models.Model):
     @api.multi
     def action_view_project_project(self):
         self.ensure_one()
-        imd = self.env['ir.model.data']
-        action = imd.xmlid_to_object('project.open_view_project_all')
-        form_view_id = imd.xmlid_to_res_id('project.edit_project')
+        action = self.env.ref('project.open_view_project_all')
+        form_view_id = self.env.ref('project.edit_project').id
 
         result = {
             'name': action.name,
@@ -218,10 +215,9 @@ class SaleOrder(models.Model):
     @api.multi
     def action_view_timesheet(self):
         self.ensure_one()
-        imd = self.env['ir.model.data']
-        action = imd.xmlid_to_object('hr_timesheet.act_hr_timesheet_line')
-        list_view_id = imd.xmlid_to_res_id('hr_timesheet.hr_timesheet_line_tree')
-        form_view_id = imd.xmlid_to_res_id('hr_timesheet.hr_timesheet_line_form')
+        action = self.env.ref('hr_timesheet.act_hr_timesheet_line')
+        list_view_id = self.env.ref('hr_timesheet.hr_timesheet_line_tree').id
+        form_view_id = self.env.ref('hr_timesheet.hr_timesheet_line_form').id
 
         result = {
             'name': action.name,

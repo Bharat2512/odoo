@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<openerp>
-    <data>
+<odoo>
         <record id="view_product_timesheet_form" model="ir.ui.view">
-            <field name="name">product.template.timesheet.form</field>
+            <field name="name">product.template.timesheet.form.inherit</field>
             <field name="model">product.template</field>
             <field name="inherit_id" ref="sale.product_template_form_view_invoice_policy"/>
             <field name="arch" type="xml">
@@ -17,7 +16,7 @@
         </record>
 
         <record id="hr_timesheet_employee_extd_form" model="ir.ui.view">
-            <field name="name">hr.timesheet.employee.extd_form</field>
+            <field name="name">hr.timesheet.employee.extd_form.inherit</field>
             <field name="model">hr.employee</field>
             <field name="inherit_id" ref="hr.view_employee_form"/>
             <field name="arch" type="xml">
@@ -30,7 +29,7 @@
         </record>
 
         <record id="view_order_form_inherit_sale_timesheet" model="ir.ui.view">
-            <field name="name">sale.order.form.sale.timesheet</field>
+            <field name="name">sale.order.form.sale.timesheet.inherit</field>
             <field name="model">sale.order</field>
             <field name="inherit_id" ref="sale.view_order_form"/>
             <field name="arch" type="xml">
@@ -67,5 +66,4 @@
                 </data>
            </field>
         </record>
-    </data>
-</openerp>
+</odoo>
