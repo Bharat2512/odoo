@@ -4637,8 +4637,9 @@ class BaseModel(object):
     def _generate_order_by_inner(self, alias, order_spec, query, reverse_direction=False, seen=None):
         if seen is None:
             seen = set()
-        order_by_elements = []
         self._check_qorder(order_spec)
+
+        order_by_elements = []
         for order_part in order_spec.split(','):
             order_split = order_part.strip().split(' ')
             order_field = order_split[0].strip()
@@ -4646,49 +4647,30 @@ class BaseModel(object):
             if reverse_direction:
                 order_direction = 'ASC' if order_direction == 'DESC' else 'DESC'
             do_reverse = order_direction == 'DESC'
-            order_column = None
-            inner_clauses = []
-            add_dir = False
+
+            field = self._fields.get(order_field)
+            if not field:
+                raise ValueError(_("Sorting field %s not found on model %s") % (order_field, self._name))
+
             if order_field == 'id':
                 order_by_elements.append('"%s"."%s" %s' % (alias, order_field, order_direction))
-            elif order_field in self._columns:
-                order_column = self._columns[order_field]
-                if order_column._classic_read:
-                    if order_column.translate and not callable(order_column.translate):
-                        inner_clauses = [self._generate_translated_field(alias, order_field, query)]
-                    else:
-                        inner_clauses = ['"%s"."%s"' % (alias, order_field)]
-                    add_dir = True
-                elif order_column._type == 'many2one':
-                    key = (self._name, order_column._obj, order_field)
-                    if key not in seen:
-                        seen.add(key)
-                        inner_clauses = self._generate_m2o_order_by(alias, order_field, query, do_reverse, seen)
-                else:
-                    continue  # ignore non-readable or "non-joinable" fields
-            elif order_field in self._inherit_fields:
-                parent_obj = self.pool[self._inherit_fields[order_field][3]]
-                order_column = parent_obj._columns[order_field]
-                if order_column._classic_read:
-                    inner_clauses = [self._inherits_join_calc(alias, order_field, query, implicit=False, outer=True)]
-                    add_dir = True
-                elif order_column._type == 'many2one':
-                    key = (parent_obj._name, order_column._obj, order_field)
-                    if key not in seen:
-                        seen.add(key)
-                        inner_clauses = self._generate_m2o_order_by(alias, order_field, query, do_reverse, seen)
-                else:
-                    continue  # ignore non-readable or "non-joinable" fields
             else:
-                raise ValueError(_("Sorting field %s not found on model %s") % (order_field, self._name))
-            if order_column and order_column._type == 'boolean':
-                inner_clauses = ["COALESCE(%s, false)" % inner_clauses[0]]
-
-            for clause in inner_clauses:
-                if add_dir:
-                    order_by_elements.append("%s %s" % (clause, order_direction))
+                if field.inherited:
+                    field = field.base_field
+                column = field.column
+                if column and column._classic_read:
+                    qualifield_name = self._inherits_join_calc(alias, order_field, query, implicit=False, outer=True)
+                    if field.type == 'boolean':
+                        qualifield_name = "COALESCE(%s, false)" % qualifield_name
+                    order_by_elements.append("%s %s" % (qualifield_name, order_direction))
+                elif column and column._type == 'many2one':
+                    key = (field.model_name, field.comodel_name, order_field)
+                    if key not in seen:
+                        seen.add(key)
+                        order_by_elements += self._generate_m2o_order_by(alias, order_field, query, do_reverse, seen)
                 else:
-                    order_by_elements.append(clause)
+                    continue  # ignore non-readable or "non-joinable" fields
+
         return order_by_elements
 
     @api.model
