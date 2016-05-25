@@ -4753,13 +4753,18 @@ class BaseModel(object):
             return ffield.column.search(self._cr, self._model, args or [], field, value, offset, limit, self._uid)
 
     @api.multi
+    @api.returns(None, lambda value: value[0])
     def copy_data(self, default=None):
         """
         Copy given record's data with all its fields values
 
         :param default: field values to override in the original values of the copied record
-        :return: dictionary containing all the field values
+        :return: list with a dictionary containing all the field values
         """
+        # In the old API, this method took a single id and return a dict. When
+        # invoked with the new API, it returned a list of dicts.
+        self.ensure_one()
+
         # avoid recursion through already copied records in case of circular relationship
         if '__copy_data_seen' not in self._context:
             self = self.with_context(__copy_data_seen=defaultdict(set))
@@ -4807,7 +4812,7 @@ class BaseModel(object):
             if field.type == 'one2many':
                 # duplicate following the order of the ids because we'll rely on
                 # it later for copying translations in copy_translation()!
-                lines = [rec.copy_data() for rec in self[name].sorted(key='id')]
+                lines = [rec.copy_data()[0] for rec in self[name].sorted(key='id')]
                 # the lines are duplicated using the wrong (old) parent, but then
                 # are reassigned to the correct one thanks to the (0, 0, ...)
                 default[name] = [(0, 0, line) for line in lines if line]
@@ -4816,7 +4821,7 @@ class BaseModel(object):
             else:
                 default[name] = field.convert_to_write(self[name], self)
 
-        return default
+        return [default]
 
     @api.v7
     def copy_translations(self, cr, uid, old_id, new_id, context=None):
@@ -4876,24 +4881,23 @@ class BaseModel(object):
                         vals['value'] = new_wo_lang[name]
                     Translation.create(vals)
 
+    @api.multi
     @api.returns('self', lambda value: value.id)
-    def copy(self, cr, uid, id, default=None, context=None):
+    def copy(self, default=None):
         """ copy(default=None)
 
-        Duplicate record with given id updating it with default values
+        Duplicate record ``self`` updating it with default values
 
         :param dict default: dictionary of field values to override in the
                original values of the copied record, e.g: ``{'field_name': overridden_value, ...}``
         :returns: new record
 
         """
-        if context is None:
-            context = {}
-        context = context.copy()
-        data = self.copy_data(cr, uid, id, default, context)
-        new_id = self.create(cr, uid, data, context)
-        self.copy_translations(cr, uid, id, new_id, context)
-        return new_id
+        self.ensure_one()
+        vals = self.copy_data(default)[0]
+        new = self.create(vals)
+        self.copy_translations(new)
+        return new
 
     @api.multi
     @api.returns('self')
