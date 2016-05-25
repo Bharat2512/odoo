@@ -4738,16 +4738,19 @@ class BaseModel(object):
 
         return _uniquify_list([x[0] for x in res])
 
-    # returns the different values ever entered for one field
-    # this is used, for example, in the client when the user hits enter on
-    # a char field
-    def distinct_field_get(self, cr, uid, field, value, args=None, offset=0, limit=None):
-        if not args:
-            args = []
-        if field in self._inherit_fields:
-            return self.pool[self._inherit_fields[field][0]].distinct_field_get(cr, uid, field, value, args, offset, limit)
+    @api.model
+    def distinct_field_get(self, field, value, args=None, offset=0, limit=None):
+        """ Returns the different values ever entered for one field. This is used,
+            for example, in the client when the user hits enter on a char field.
+
+            Deprecated.
+        """
+        ffield = self._fields[field]
+        if ffield.inherited:
+            parent_model = ffield.related_field.model_name
+            return self.env[parent_model].distinct_field_get(field, value, args, offset, limit)
         else:
-            return self._columns[field].search(cr, self, args, field, value, offset, limit, uid)
+            return ffield.column.search(self._cr, self._model, args or [], field, value, offset, limit, self._uid)
 
     def copy_data(self, cr, uid, id, default=None, context=None):
         """
