@@ -30,7 +30,4 @@ Also:
              'data/account_chart_template_data.yml',
              'data/localisation_data.xml',
              ],
-    'demo': [],
-    'installable': True,
-    'images': [],
 }
