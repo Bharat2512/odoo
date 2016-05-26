@@ -5028,14 +5028,16 @@ class BaseModel(object):
     get_xml_id = get_external_id
     _get_xml_ids = _get_external_ids
 
-    def print_report(self, cr, uid, ids, name, data, context=None):
+    @api.multi
+    def print_report(self, name, data):
         """
         Render the report ``name`` for the given IDs. The report must be defined
         for this model, not another.
         """
-        report = self.pool['ir.actions.report.xml']._lookup_report(cr, name)
+        report = self.env['ir.actions.report.xml']._lookup_report(name)
         assert self._name == report.table
-        return report.create(cr, uid, ids, data, context)
+        cr, uid, context = self.env.args
+        return report.create(cr, uid, self.ids, data, context)
 
     # Transience
     @classmethod
