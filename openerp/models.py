@@ -4983,10 +4983,11 @@ class BaseModel(object):
             current_ids = parent_ids
         return True
 
-    def _get_external_ids(self, cr, uid, ids, *args, **kwargs):
+    @api.multi
+    def _get_external_ids(self):
         """Retrieve the External ID(s) of any database record.
 
-        **Synopsis**: ``_get_xml_ids(cr, uid, ids) -> { 'id': ['module.xml_id'] }``
+        **Synopsis**: ``_get_xml_ids() -> { 'id': ['module.xml_id'] }``
 
         :return: map of ids to the list of their fully qualified External IDs
                  in the form ``module.key``, or an empty list when there's no External
@@ -4995,18 +4996,14 @@ class BaseModel(object):
                      { 'id': ['module.ext_id', 'module.ext_id_bis'],
                        'id2': [] }
         """
-        ir_model_data = self.pool.get('ir.model.data')
-        data_ids = ir_model_data.search(cr, uid, [('model', '=', self._name), ('res_id', 'in', ids)])
-        data_results = ir_model_data.read(cr, uid, data_ids, ['module', 'name', 'res_id'])
-        result = {}
-        for id in ids:
-            # can't use dict.fromkeys() as the list would be shared!
-            result[id] = []
-        for record in data_results:
-            result[record['res_id']].append('%(module)s.%(name)s' % record)
+        result = {record.id: [] for record in self}
+        domain = [('model', '=', self._name), ('res_id', 'in', self.ids)]
+        for data in self.env['ir.model.data'].search_read(domain, ['module', 'name', 'res_id']):
+            result[data['res_id']].append('%(module)s.%(name)s' % data)
         return result
 
-    def get_external_id(self, cr, uid, ids, *args, **kwargs):
+    @api.multi
+    def get_external_id(self):
         """Retrieve the External ID of any database record, if there
         is one. This method works as a possible implementation
         for a function field, to be able to add it to any
@@ -5023,13 +5020,9 @@ class BaseModel(object):
                      { 'id': 'module.ext_id',
                        'id2': '' }
         """
-        results = self._get_xml_ids(cr, uid, ids)
-        for k, v in results.iteritems():
-            if results[k]:
-                results[k] = v[0]
-            else:
-                results[k] = ''
-        return results
+        results = self._get_external_ids()
+        return {key: val[0] if val else ''
+                for key, val in results.iteritems()}
 
     # backwards compatibility
     get_xml_id = get_external_id
