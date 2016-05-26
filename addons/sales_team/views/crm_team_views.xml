@@ -3,7 +3,6 @@
     <data>
         <menuitem name="Sales"
             id="base.menu_base_partner"
-            icon="fa-credit-card"
             groups="base.group_sale_salesman,base.group_sale_manager" sequence="6"/>
 
         <!-- Cateamions Search view -->
