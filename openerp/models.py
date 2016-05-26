@@ -4927,13 +4927,6 @@ class BaseModel(object):
             (self - existing)._cache.update(FailedValue(exc))
         return existing
 
-    def check_recursion(self, cr, uid, ids, context=None, parent=None):
-        _logger.warning("You are using deprecated %s.check_recursion(). Please use the '_check_recursion()' instead!" % \
-                        self._name)
-        assert parent is None or parent in self._columns or parent in self._inherit_fields,\
-                    "The 'parent' parameter passed to check_recursion() must be None or a valid field name"
-        return self._check_recursion(cr, uid, ids, context, parent)
-
     def _check_recursion(self, cr, uid, ids, context=None, parent=None):
         """
         Verifies that there is no loop in a hierarchical structure of records,
