@@ -5159,44 +5159,44 @@ class BaseModel(object):
     # for backward compatibility
     resolve_o2m_commands_to_record_dicts = resolve_2many_commands
 
-    def search_read(self, cr, uid, domain=None, fields=None, offset=0, limit=None, order=None, context=None):
+    @api.model
+    def search_read(self, domain=None, fields=None, offset=0, limit=None, order=None):
         """
         Performs a ``search()`` followed by a ``read()``.
 
-        :param cr: database cursor
-        :param user: current user id
         :param domain: Search domain, see ``args`` parameter in ``search()``. Defaults to an empty domain that will match all records.
         :param fields: List of fields to read, see ``fields`` parameter in ``read()``. Defaults to all fields.
         :param offset: Number of records to skip, see ``offset`` parameter in ``search()``. Defaults to 0.
         :param limit: Maximum number of records to return, see ``limit`` parameter in ``search()``. Defaults to no limit.
         :param order: Columns to sort result, see ``order`` parameter in ``search()``. Defaults to no sort.
-        :param context: context arguments.
         :return: List of dictionaries containing the asked fields.
         :rtype: List of dictionaries.
 
         """
-        record_ids = self.search(cr, uid, domain or [], offset=offset, limit=limit, order=order, context=context)
-        if not record_ids:
+        records = self.search(domain or [], offset=offset, limit=limit, order=order)
+        if not records:
             return []
 
         if fields and fields == ['id']:
             # shortcut read if we only want the ids
-            return [{'id': id} for id in record_ids]
+            return [{'id': record.id} for record in records]
 
         # read() ignores active_test, but it would forward it to any downstream search call
         # (e.g. for x2m or function fields), and this is not the desired behavior, the flag
         # was presumably only meant for the main search().
-        # TODO: Move this to read() directly?                                                                                                
-        read_ctx = dict(context or {})                                                                                                       
-        read_ctx.pop('active_test', None)                                                                                                    
-                                                                                                                                             
-        result = self.read(cr, uid, record_ids, fields, context=read_ctx) 
+        # TODO: Move this to read() directly?
+        if 'active_test' in self._context:
+            context = dict(self._context)
+            del context['active_test']
+            records = records.with_context(context)
+
+        result = records.read(fields)
         if len(result) <= 1:
             return result
 
         # reorder read
-        index = dict((r['id'], r) for r in result)
-        return [index[x] for x in record_ids if x in index]
+        index = {vals['id']: vals for vals in result}
+        return [index[record.id] for record in records if record.id in index]
 
     @api.multi
     def toggle_active(self):
