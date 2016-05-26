@@ -4927,26 +4927,25 @@ class BaseModel(object):
             (self - existing)._cache.update(FailedValue(exc))
         return existing
 
-    def _check_recursion(self, cr, uid, ids, context=None, parent=None):
+    @api.multi
+    def _check_recursion(self, parent=None):
         """
         Verifies that there is no loop in a hierarchical structure of records,
-        by following the parent relationship using the **parent** field until a loop
-        is detected or until a top-level record is found.
+        by following the parent relationship using the **parent** field until a
+        loop is detected or until a top-level record is found.
 
-        :param cr: database cursor
-        :param uid: current user id
-        :param ids: list of ids of records to check
-        :param parent: optional parent field name (default: ``self._parent_name = parent_id``)
-        :return: **True** if the operation can proceed safely, or **False** if an infinite loop is detected.
+        :param parent: optional parent field name (default: ``self._parent_name``)
+        :return: **True** if no loop was found, **False** otherwise.
         """
         if not parent:
             parent = self._parent_name
 
         # must ignore 'active' flag, ir.rules, etc. => direct SQL query
+        cr = self._cr
         query = 'SELECT "%s" FROM "%s" WHERE id = %%s' % (parent, self._table)
-        for id in ids:
+        for id in self.ids:
             current_id = id
-            while current_id is not None:
+            while current_id:
                 cr.execute(query, (current_id,))
                 result = cr.fetchone()
                 current_id = result[0] if result else None
