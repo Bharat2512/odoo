@@ -5106,7 +5106,8 @@ class BaseModel(object):
 
         return True
 
-    def resolve_2many_commands(self, cr, uid, field_name, commands, fields=None, context=None):
+    @api.model
+    def resolve_2many_commands(self, field_name, commands, fields=None):
         """ Serializes one2many and many2many commands into record dictionaries
             (as if all the records came from the database via a read()).  This
             method is aimed at onchange methods on one2many and many2many fields.
@@ -5125,9 +5126,9 @@ class BaseModel(object):
                 (except records may be missing the ``id`` field if they don't exist in db)
             :rtype: list(dict)
         """
-        result = []             # result (list of dict)
-        record_ids = []         # ids of records to read
-        updates = {}            # {id: dict} of updates on particular records
+        result = []                     # result (list of dict)
+        record_ids = []                 # ids of records to read
+        updates = defaultdict(dict)     # {id: vals} of updates on records
 
         for command in commands or []:
             if not isinstance(command, (list, tuple)):
@@ -5136,7 +5137,7 @@ class BaseModel(object):
                 result.append(command[2])
             elif command[0] == 1:
                 record_ids.append(command[1])
-                updates.setdefault(command[1], {}).update(command[2])
+                updates[command[1]].update(command[2])
             elif command[0] in (2, 3):
                 record_ids = [id for id in record_ids if id != command[1]]
             elif command[0] == 4:
@@ -5147,10 +5148,11 @@ class BaseModel(object):
                 result, record_ids = [], list(command[2])
 
         # read the records and apply the updates
-        other_model = self.pool[self._fields[field_name].comodel_name]
-        for record in other_model.read(cr, uid, record_ids, fields=fields, context=context):
-            record.update(updates.get(record['id'], {}))
-            result.append(record)
+        field = self._fields[field_name]
+        records = self.env[field.comodel_name].browse(record_ids)
+        for data in records.read(fields):
+            data.update(updates.get(data['id'], {}))
+            result.append(data)
 
         return result
 
