@@ -5204,7 +5204,8 @@ class BaseModel(object):
         for record in self:
             record.active = not record.active
 
-    def _register_hook(self, cr):
+    @api.model_cr
+    def _register_hook(self):
         """ stuff to do right after the registry is built """
         pass
 
