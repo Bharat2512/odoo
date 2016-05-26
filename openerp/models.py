@@ -4953,39 +4953,34 @@ class BaseModel(object):
                     return False
         return True
 
-    def _check_m2m_recursion(self, cr, uid, ids, field_name):
+    @api.multi
+    def _check_m2m_recursion(self, field_name):
         """
-        Verifies that there is no loop in a hierarchical structure of records,
-        by following the parent relationship using the **parent** field until a loop
-        is detected or until a top-level record is found.
+        Verifies that there is no loop in a directed graph of records, by
+        following a many2many relationship with the given field name.
 
-        :param cr: database cursor
-        :param uid: current user id
-        :param ids: list of ids of records to check
         :param field_name: field to check
-        :return: **True** if the operation can proceed safely, or **False** if an infinite loop is detected.
+        :return: **True** if no loop was found, **False** otherwise.
         """
-
         field = self._fields.get(field_name)
         if not (field and field.type == 'many2many' and
                 field.comodel_name == self._name and field.store):
             # field must be a many2many on itself
             raise ValueError('invalid field_name: %r' % (field_name,))
 
-        query = 'SELECT distinct "%s" FROM "%s" WHERE "%s" IN %%s' % \
-                    (field.column2, field.relation, field.column1)
-        ids_parent = ids[:]
-        while ids_parent:
-            ids_parent2 = []
-            for i in range(0, len(ids_parent), cr.IN_MAX):
-                j = i + cr.IN_MAX
-                sub_ids_parent = ids_parent[i:j]
-                cr.execute(query, (tuple(sub_ids_parent),))
-                ids_parent2.extend(filter(None, map(lambda x: x[0], cr.fetchall())))
-            ids_parent = ids_parent2
-            for i in ids_parent:
-                if i in ids:
-                    return False
+        cr = self._cr
+        query = 'SELECT "%s" FROM "%s" WHERE "%s" IN %%s AND "%s" IS NOT NULL' % \
+                    (field.column2, field.relation, field.column1, field.column2)
+        ids = set(self.ids)
+        current_ids = set(ids)
+        while current_ids:
+            parent_ids = set()
+            for sub_ids in cr.split_for_in_conditions(current_ids):
+                cr.execute(query, [sub_ids])
+                parent_ids.update([row[0] for row in cr.fetchall()])
+            if any(parent_id in ids for parent_id in parent_ids):
+                return False
+            current_ids = parent_ids
         return True
 
     def _get_external_ids(self, cr, uid, ids, *args, **kwargs):
