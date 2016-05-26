@@ -5049,26 +5049,29 @@ class BaseModel(object):
         """
         return cls._transient
 
-    def _transient_clean_rows_older_than(self, cr, seconds):
+    @api.model_cr
+    def _transient_clean_rows_older_than(self, seconds):
         assert self._transient, "Model %s is not transient, it cannot be vacuumed!" % self._name
         # Never delete rows used in last 5 minutes
         seconds = max(seconds, 300)
         query = ("SELECT id FROM " + self._table + " WHERE"
             " COALESCE(write_date, create_date, (now() at time zone 'UTC'))::timestamp"
             " < ((now() at time zone 'UTC') - interval %s)")
-        cr.execute(query, ("%s seconds" % seconds,))
-        ids = [x[0] for x in cr.fetchall()]
-        self.unlink(cr, SUPERUSER_ID, ids)
+        self._cr.execute(query, ("%s seconds" % seconds,))
+        ids = [x[0] for x in self._cr.fetchall()]
+        self.sudo().browse(ids).unlink()
 
-    def _transient_clean_old_rows(self, cr, max_count):
+    @api.model_cr
+    def _transient_clean_old_rows(self, max_count):
         # Check how many rows we have in the table
-        cr.execute("SELECT count(*) AS row_count FROM " + self._table)
-        res = cr.fetchall()
+        self._cr.execute("SELECT count(*) AS row_count FROM " + self._table)
+        res = self._cr.fetchall()
         if res[0][0] <= max_count:
             return  # max not reached, nothing to do
-        self._transient_clean_rows_older_than(cr, 300)
+        self._transient_clean_rows_older_than(300)
 
-    def _transient_vacuum(self, cr, uid, force=False):
+    @api.model
+    def _transient_vacuum(self, force=False):
         """Clean the transient records.
 
         This unlinks old records from the transient model tables whenever the
@@ -5087,18 +5090,19 @@ class BaseModel(object):
         """
         assert self._transient, "Model %s is not transient, it cannot be vacuumed!" % self._name
         _transient_check_time = 20          # arbitrary limit on vacuum executions
-        self._transient_check_count += 1
-        if not force and (self._transient_check_count < _transient_check_time):
+        cls = type(self)
+        cls._transient_check_count += 1
+        if not force and (cls._transient_check_count < _transient_check_time):
             return True  # no vacuum cleaning this time
-        self._transient_check_count = 0
+        cls._transient_check_count = 0
 
         # Age-based expiration
         if self._transient_max_hours:
-            self._transient_clean_rows_older_than(cr, self._transient_max_hours * 60 * 60)
+            self._transient_clean_rows_older_than(self._transient_max_hours * 60 * 60)
 
         # Count-based expiration
         if self._transient_max_count:
-            self._transient_clean_old_rows(cr, self._transient_max_count)
+            self._transient_clean_old_rows(self._transient_max_count)
 
         return True
 
