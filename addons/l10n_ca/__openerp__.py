@@ -50,6 +50,5 @@ position.
         'data/account_chart_template_data.yml',
         'data/res_company_data.xml',
     ],
-    'installable': True,
     'post_init_hook': 'load_translations',
 }
