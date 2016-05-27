@@ -17,13 +17,16 @@ sent mails with personal token for the invitation of the survey.
     """,
     'summary': 'Create surveys, collect answers and print statistics',
     'website': 'https://www.odoo.com/page/survey',
-    'depends': ['mail', 'website'],
+    'depends': ['mail'],
     'data': [
         'security/survey_security.xml',
         'security/ir.model.access.csv',
         'views/survey_views.xml',
         'views/survey_templates.xml',
         'views/survey_result.xml',
+        'views/survey_snippets.xml',
+        'views/snippets_option.xml',
+        'views/editor_field_html.xml',
         'wizard/survey_email_compose_message.xml',
         'data/survey_stages.xml',
         'data/survey_cron.xml'
