@@ -17,16 +17,14 @@
     </t>
 
     <div t-name="website.homepage_editor_welcome_message" class="container o_homepage_editor_welcome_message">
-        <div class="row">
-            <div class="col-md-4">
-                <span class="fa fa-smile-o"/>
+        <div class="row mt96 mb96">
+            <div class="col-sm-5 col-md-6 hidden-xs">
+                <img src="/website/static/src/img/welcome_message/window.png" class="img img-responsive center-block" width="300"/>
             </div>
-            <div class="col-md-8">
-                <h1>Welcome to Odoo !</h1>
-                <p>
-                    Let's start by designing this homepage.<br/>
-                    Follow the signs <span class="fa fa-question-circle"/> to start.
-                </p>
+            <div class="col-sm-7 col-md-6">
+                <h2 class="mt0">Welcome to your <b>Homepage</b>!</h2>
+                <p class="lead"> Let's start designing.</p>
+                <p>Follow these signs <span class="o_loading_dark"/> to start.</p>
             </div>
         </div>
     </div>

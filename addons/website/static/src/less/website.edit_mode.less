@@ -41,19 +41,51 @@
 }
 
 .o_homepage_editor_welcome_message {
-    font-family: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 3em;
-
-    .fa-smile-o {
-        color: @odoo-brand-primary;
-        font-size: 7em;
-    }
+    font-family: Roboto, @font-family-sans-serif;
 
     > .row {
         .o-flex-display();
-        .o-flex-flow(row, nowrap);
-        .o-justify-content(center);
         .o-align-items(center);
+
+        > div {
+            .o-flex(0, 0, auto);
+        }
+    }
+
+    // Temporary
+    @-webkit-keyframes bounce {
+        0%, 100% { .scale(0.0) }
+        50% { .scale(1) }
+    }
+    @keyframes bounce {
+        0%, 100% { .scale(0.0) }
+        50% { .scale(1) }
+    }
+    .o_loading_dark {
+        position: relative;
+        display: inline-block;
+        margin: auto 8px;
+        height:20px;
+        width:20px;
+        .translate(0, 3px);
+
+        &:before, &:after {
+            content: "";
+            border-radius: 50%;
+            background-color: @brand-primary;
+            opacity: 0.6;
+            height:100%;
+            width:100%;
+
+            .o-position-absolute(0,0);
+            .o-animation(bounce, 2s, ease-in-out, 0s, infinite);
+        }
+
+        &:after {
+            background-color: @odoo-brand-primary;
+            -webkit-animation-delay: -1.0s;
+            animation-delay: -1.0s;
+        }
     }
 }
 
