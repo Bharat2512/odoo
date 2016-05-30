@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# Part of Odoo. See LICENSE file for full copyright and licensing details.
+
 {
     'name': 'Resellers',
     'category': 'Website',
@@ -8,13 +11,13 @@
 Publish and Assign Partner
 ==========================
         """,
-    'depends': ['crm_partner_assign','website_partner', 'website_google_map'],
+    'depends': ['crm_partner_assign', 'website_partner', 'website_google_map'],
     'data': [
-        'views/partner_grade.xml',
-        'views/website_crm_partner_assign.xml',
+        'views/res_partner_views.xml',
+        'views/website_crm_partner_assign_templates.xml',
     ],
     'demo': [
-        'data/res_partner_grade_demo.xml',
+        'data/res_partner_demo.xml',
     ],
     'qweb': ['static/src/xml/*.xml'],
     'installable': True,
