@@ -1,5 +1,10 @@
-from openerp.api import Environment
-import openerp.tests
+# -*- coding: utf-8 -*-
+# Part of Odoo. See LICENSE file for full copyright and licensing details.
+
+from odoo.api import Environment
+import odoo.tests
+
+
 @openerp.tests.common.at_install(False)
 @openerp.tests.common.post_install(True)
 class TestWebsiteCrm(openerp.tests.HttpCase):
