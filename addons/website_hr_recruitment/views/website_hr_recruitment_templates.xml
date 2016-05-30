@@ -140,7 +140,7 @@
 <template id="apply">
     <t t-call="website.layout">
         <t t-set="additional_title">Apply Job</t>
-    
+
         <div id="wrap"  class="container">
             <h1 class="text-center">
                 Job Application Form
