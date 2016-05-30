@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<openerp>
-    <data>
+<odoo>
         <record id="hr_contract_form_l10n_be_inherit" model="ir.ui.view">
             <field name="name">hr.contract.form.inherit</field>
             <field name="model">hr.contract</field>
@@ -56,5 +55,4 @@
             </data>
             </field>
         </record>
-    </data>
-</openerp>
+</odoo>
