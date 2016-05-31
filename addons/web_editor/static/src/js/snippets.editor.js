@@ -323,7 +323,7 @@ data.Class = Widget.extend({
         this.associate_snippet_names(this.$snippets);
     },
 
-    associate_snippet_names: function($snippets) {
+    associate_snippet_names: function ($snippets) {
         _.each($snippets, function (snippet) {
             var $sbody = $(snippet).find(".oe_snippet_body");
             var snippet_classes = $sbody.attr("class").match(/s_[^ ]+/g);

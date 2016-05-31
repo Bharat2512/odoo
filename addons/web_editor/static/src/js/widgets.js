@@ -427,6 +427,7 @@ var ImageDialog = Widget.extend({
     },
     fetch_existing: function (needle) {
         var domain = [['res_model', '=', 'ir.ui.view']].concat(this.domain);
+        domain.push('|', '&', ["type", "=", "url"], ["url", "like", "_%"], '&', ["type", "=", "binary"], ["datas", "like", "_%"]);
         if (needle && needle.length) {
             domain.push('|', ['datas_fname', 'ilike', needle], ['name', 'ilike', needle]);
         }
@@ -465,9 +466,7 @@ var ImageDialog = Widget.extend({
 
         this.$('.help-block').empty();
 
-        this.$('.existing-attachments').replaceWith(
-            QWeb.render(
-                'web_editor.dialog.image.existing.content', {rows: rows}));
+        this.$('.existing-attachments').replaceWith(QWeb.render('web_editor.dialog.image.existing.content', {rows: rows}));
         this.parent.$('.pager')
             .find('li.previous').toggleClass('disabled', (from === 0)).end()
             .find('li.next').toggleClass('disabled', (from + per_screen >= records.length));
@@ -516,11 +515,9 @@ var ImageDialog = Widget.extend({
                 return;
             }
             $both.css({borderWidth: "", borderColor: ""});
-            $help_block.replaceWith(QWeb.render(
-                'web_editor.dialog.image.existing.error', {
-                    views: prevented[id]
-                }
-            ));
+            $help_block.replaceWith(QWeb.render('web_editor.dialog.image.existing.error', {
+                views: prevented[id]
+            }));
         });
     },
 });
