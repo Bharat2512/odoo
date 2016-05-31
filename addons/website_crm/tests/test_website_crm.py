@@ -5,9 +5,10 @@ from odoo.api import Environment
 import odoo.tests
 
 
-@openerp.tests.common.at_install(False)
-@openerp.tests.common.post_install(True)
-class TestWebsiteCrm(openerp.tests.HttpCase):
+@odoo.tests.common.at_install(False)
+@odoo.tests.common.post_install(True)
+class TestWebsiteCrm(odoo.tests.HttpCase):
+
     def test_tour(self):
         self.phantom_js("/", "odoo.__DEBUG__.services['web.Tour'].run('website_crm_tour', 'test')", "odoo.__DEBUG__.services['web.Tour'].tours.website_crm_tour")
 
