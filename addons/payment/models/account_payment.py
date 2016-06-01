@@ -23,7 +23,7 @@ class AccountPayment(models.Model):
             self.electronic_payment_token_id = False
 
     payment_transaction_id = fields.Many2one('payment.transaction', string="Payment Transaction")
-    electronic_payment_token_id = fields.Many2one('payment.token')
+    electronic_payment_token_id = fields.Many2one('payment.token', string="Saved payment token")
     payment_type = fields.Selection(selection_add=[('electronic', 'Electronically receive money')])
     payment_method_id_code = fields.Char(related='payment_method_id.code')
 
