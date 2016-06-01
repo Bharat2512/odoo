@@ -24,8 +24,8 @@
     """,
     'depends': ['base', 'account'],
     'data': [
-        'base_data.xml',
-        'account_chart_type.xml',
+        'data/base_data.xml',
+        'data/account_chart_type_data.xml',
     ],
     'license': 'GPL-3',
     'installable': True,
