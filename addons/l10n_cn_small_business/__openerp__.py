@@ -28,5 +28,4 @@
         'data/account_chart_template_data.yml',
     ],
     'license': 'GPL-3',
-    'installable': True,
 }
