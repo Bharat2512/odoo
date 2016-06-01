@@ -423,7 +423,6 @@ def select_from_where(cr, select_field, from_table, where_field, where_ids, wher
                 res.extend([r[0] for r in cr.fetchall()])
     return res
 
-
 def select_distinct_from_where_not_null(cr, select_field, from_table):
     cr.execute('SELECT distinct("%s") FROM "%s" where "%s" is not null' % (select_field, from_table, select_field))
     return [r[0] for r in cr.fetchall()]
@@ -611,6 +610,7 @@ def create_substitution_leaf(leaf, new_elements, new_model=None, internal=False)
     new_leaf = ExtendedLeaf(new_elements, new_model, join_context=new_join_context, internal=internal)
     return new_leaf
 
+
 class expression(object):
     """ Parse a domain expression
         Use a real polish notation
@@ -618,12 +618,12 @@ class expression(object):
         For more info: http://christophe-simonis-at-tiny.blogspot.com/2008/08/new-new-domain-notation.html
     """
 
-    def __init__(self, cr, uid, exp, table, context):
+    def __init__(self, domain, model):
         """ Initialize expression object and automatically parse the expression
             right after initialization.
 
-            :param exp: expression (using domain ('foo', '=', 'bar' format))
-            :param table: root model
+            :param domain: expression (using domain ('foo', '=', 'bar' format))
+            :param model: root model
 
             :attr list result: list that will hold the result of the parsing
                 as a list of ExtendedLeaf
@@ -633,15 +633,15 @@ class expression(object):
             :attr list expression: the domain expression, that will be normalized
                 and prepared
         """
-        self._unaccent = get_unaccent_wrapper(cr)
+        self._unaccent = get_unaccent_wrapper(model._cr)
         self.joins = []
-        self.root_model = table
+        self.root_model = model._model
 
         # normalize and prepare the expression for parsing
-        self.expression = distribute_not(normalize_domain(exp))
+        self.expression = distribute_not(normalize_domain(domain))
 
         # parse the domain expression
-        self.parse(cr, uid, context=context)
+        self.parse(model._cr, model._uid, context=model._context)
 
     # ----------------------------------------
     # Leafs management
