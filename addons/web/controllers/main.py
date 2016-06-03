@@ -708,7 +708,7 @@ class Database(http.Controller):
     def restore(self, master_pwd, backup_file, name, copy=False):
         try:
             data = base64.b64encode(backup_file.read())
-            request.session.proxy("db").restore(master_pwd, name, data, copy)
+            request.session.proxy("db").restore(master_pwd, name, data, bool(copy))
             return http.local_redirect('/web/database/manager')
         except Exception, e:
             error = "Database restore error: %s" % e
