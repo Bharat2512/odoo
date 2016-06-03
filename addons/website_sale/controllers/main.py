@@ -611,7 +611,6 @@ class WebsiteSale(http.Controller):
 
     @http.route(['/shop/confirm_order'], type='http', auth="public", website=True)
     def confirm_order(self, **post):
-
         order = request.website.sale_get_order()
         if not order:
             return request.redirect("/shop")
@@ -712,9 +711,18 @@ class WebsiteSale(http.Controller):
         values['errors'] = SaleOrder._get_errors(order)
         values.update(SaleOrder._get_website_data(order))
         if not values['errors']:
-            acquirers = request.env['payment.acquirer'].search(
-                [('website_published', '=', True), ('company_id', '=', order.company_id.id)]
-            )
+            # we have to filter the payment method based on delivery carrier
+            # if the delivery carrier option has ups_cod = True then
+            # the only payment method should be ups cod
+            domain = [('website_published', '=', True), ('company_id', '=', order.company_id.id)]
+            try:
+                if order.carrier_id.ups_cod:
+                    domain = domain + [('is_cod', '=', True)]
+                else:
+                    domain = domain + [('is_cod', '=', False)]
+            except Exception:
+                pass
+            acquirers = request.env['payment.acquirer'].search(domain)
             values['acquirers'] = list(acquirers)
             acquirer_buttons = acquirers.with_context(submit_class='btn btn-primary', submit_txt=_('Pay Now')).sudo().render(
                 '/',
@@ -767,6 +775,9 @@ class WebsiteSale(http.Controller):
                 'reference': Transaction.get_next_reference(order.name),
                 'sale_order_id': order.id,
             })
+            #transaction state should be in 'pending' state in case of prosessing COD(Collect on delivery) 
+            if tx.acquirer_id.is_cod:
+                tx.state = 'pending'
             request.session['sale_transaction_id'] = tx.id
 
         # update quotation
@@ -774,7 +785,6 @@ class WebsiteSale(http.Controller):
             'payment_acquirer_id': acquirer_id,
             'payment_tx_id': request.session['sale_transaction_id']
         })
-
         # confirm the quotation
         if tx.acquirer_id.auto_confirm == 'at_pay_now':
             order.with_context(send_email=True).action_confirm()
@@ -844,7 +854,7 @@ class WebsiteSale(http.Controller):
             return request.redirect('/shop')
 
         if (not order.amount_total and not tx) or tx.state in ['pending', 'done']:
-            if (not order.amount_total and not tx):
+            if (not order.amount_total and not tx) or tx.acquirer_id.is_cod:
                 # Orders are confirmed by payment transactions, but there is none for free orders,
                 # (e.g. free events), so confirm immediately
                 order.with_context(send_email=True).action_confirm()
