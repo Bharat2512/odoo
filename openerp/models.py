@@ -2166,35 +2166,34 @@ class BaseModel(object):
         return parent_alias
 
     @api.model
-    def _inherits_join_calc(self, alias, field, query, implicit=True, outer=False):
+    def _inherits_join_calc(self, alias, fname, query, implicit=True, outer=False):
         """
         Adds missing table select and join clause(s) to ``query`` for reaching
         the field coming from an '_inherits' parent table (no duplicates).
 
         :param alias: name of the initial SQL alias
-        :param field: name of inherited field to reach
+        :param fname: name of inherited field to reach
         :param query: query object on which the JOIN should be added
         :return: qualified name of field, to be used in SELECT clause
         """
         # INVARIANT: alias is the SQL alias of model._table in query
-        model = self
-        while field in model._inherit_fields and field not in model._columns:
+        model, field = self, self._fields[fname]
+        while field.inherited:
             # retrieve the parent model where field is inherited from
-            parent_model_name = model._inherit_fields[field][0]
-            parent_model = self.env[parent_model_name]
-            parent_field = model._inherits[parent_model_name]
-            # JOIN parent_model._table AS parent_alias ON alias.parent_field = parent_alias.id
+            parent_model = self.env[field.related_field.model_name]
+            parent_fname = field.related[0]
+            # JOIN parent_model._table AS parent_alias ON alias.parent_fname = parent_alias.id
             parent_alias, _ = query.add_join(
-                (alias, parent_model._table, parent_field, 'id', parent_field),
+                (alias, parent_model._table, parent_fname, 'id', parent_fname),
                 implicit=implicit, outer=outer,
             )
-            model, alias = parent_model, parent_alias
+            model, alias, field = parent_model, parent_alias, field.related_field
         # handle the case where the field is translated
-        translate = model._columns[field].translate
+        translate = getattr(field, 'translate', None)
         if translate and not callable(translate):
-            return model._generate_translated_field(alias, field, query)
+            return model._generate_translated_field(alias, fname, query)
         else:
-            return '"%s"."%s"' % (alias, field)
+            return '"%s"."%s"' % (alias, fname)
 
     def _parent_store_compute(self, cr):
         if not self._parent_store:
