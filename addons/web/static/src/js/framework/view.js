@@ -94,9 +94,10 @@ var View = Widget.extend({
                 }
                 ncontext.add(action.context || {});
                 action.context = ncontext;
-                return self.do_action(action, {
+                var options = _.extend({
                     on_close: result_handler,
-                });
+                }, action.options);
+                return self.do_action(action, options);
             } else {
                 self.do_action({"type":"ir.actions.act_window_close"});
                 return result_handler();
