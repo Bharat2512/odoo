@@ -729,12 +729,12 @@ class expression(object):
                     return [(left, 'in', left_model.search(doms).ids)]
                 return doms
             else:
-                def recursive_children(ids, model, parent_field):
-                    if not ids:
-                        return []
-                    ids2 = model.search([(parent_field, 'in', ids)]).ids
-                    return ids + recursive_children(ids2, model, parent_field)
-                return [(left, 'in', recursive_children(ids, left_model, parent or left_model._parent_name))]
+                parent_name = parent or left_model._parent_name
+                child_ids = set(ids)
+                while ids:
+                    ids = left_model.search([(parent_name, 'in', ids)]).ids
+                    child_ids.update(ids)
+                return [(left, 'in', list(child_ids))]
 
         def parent_of_domain(left, ids, left_model, parent=None, prefix=''):
             """ Return a domain implementing the parent_of operator for [(left,parent_of,ids)],
@@ -750,15 +750,12 @@ class expression(object):
                     return [(left, 'in', left_model.search(doms).ids)]
                 return doms
             else:
-                def get_parent_ids(record, parent_field):
-                    ids = set([record.id])
-                    while record[parent_field]:
-                        record = record[parent_field]
-                        ids.add(record.id)
-                    return ids
+                parent_name = parent or left_model._parent_name
                 parent_ids = set()
-                for rec in left_model.browse(ids):
-                    parent_ids |= get_parent_ids(rec, parent or left_model._parent_name)
+                for record in left_model.browse(ids):
+                    while record:
+                        parent_ids.add(record.id)
+                        record = record[parent_name]
                 return [(left, 'in', list(parent_ids))]
 
         HIERARCHY_FUNCS = {'child_of': child_of_domain,
