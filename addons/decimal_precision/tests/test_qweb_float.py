@@ -2,16 +2,11 @@
 from openerp.tests import common
 
 class TestFloatExport(common.TransactionCase):
-    def setUp(self):
-        super(TestFloatExport, self).setUp()
-        self.Model = self.registry('decimal.precision.test')
-
     def get_converter(self, name):
-        converter = self.registry('ir.qweb.field.float')
-        field = self.Model._fields[name]
+        converter = self.env['ir.qweb.field.float']
+        field = self.env['decimal.precision.test']._fields[name]
 
-        return lambda value, options=None: converter.value_to_html(
-            self.cr, self.uid, value, field, options=options, context=None)
+        return lambda value, options=None: converter.value_to_html(value, field, options=options)
 
     def test_basic_float(self):
         converter = self.get_converter('float')
@@ -39,12 +34,11 @@ class TestFloatExport(common.TransactionCase):
             '42.1234')
 
     def test_precision_domain(self):
-        DP = self.registry('decimal.precision')
-        DP.create(self.cr, self.uid, {
+        self.env['decimal.precision'].create({
             'name': 'A',
             'digits': 2,
         })
-        DP.create(self.cr, self.uid, {
+        self.env['decimal.precision'].create({
             'name': 'B',
             'digits': 6,
         })
