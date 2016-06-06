@@ -141,7 +141,7 @@ var MediaDialog = Dialog.extend({
 
         this.active = this.imageDialog;
 
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (event) {
+        this.$('a[data-toggle="tab"]').on('shown.bs.tab', function (event) {
             if ($(event.target).is('[href="#editor-media-image"]')) {
                 self.active = self.imageDialog;
                 self.$('li.search, li.previous, li.next').removeClass("hidden");
