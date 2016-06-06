@@ -255,7 +255,7 @@
                                     <span class="o_stat_text">OEE</span>
                                 </div>
                             </button>
-                            <button name="%(mrp_workcenter_productivity_report_blocked)d" type="action" class="oe_stat_button" icon="fa-bar-chart">
+                            <button name="%(mrp_workcenter_productivity_report_blocked)d" type="action" class="oe_stat_button" icon="fa-bar-chart" context="{'default_workcenter_id': active_id}">
                                 <div class="o_form_field o_stat_info">
                                     <span class="o_stat_value"><field name="blocked_time" widget="statinfo" nolabel="1"/> hour(s)</span>
                                     <span class="o_stat_text">Lost</span>
