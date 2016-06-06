@@ -112,7 +112,7 @@ class MrpUnbuild(models.Model):
                 'quantity': consume_move.product_uom_qty})
         else:
             consume_move.quantity_done = consume_move.product_uom_qty
-        consume_move.move_validate()
+        consume_move.action_done()
         original_quants = consume_move.quant_ids.mapped('consumed_quant_ids')
 
         for produce_move in produce_moves:
@@ -126,7 +126,7 @@ class MrpUnbuild(models.Model):
                 })
             else:
                 produce_move.quantity_done = produce_move.product_uom_qty
-        produce_moves.move_validate()
+        produce_moves.action_done()
         produced_quant_ids = produce_moves.mapped('quant_ids').filtered(lambda quant: quant.qty > 0)
         consume_move.quant_ids.write({'produced_quant_ids': [(6, 0, produced_quant_ids.ids)]})
 

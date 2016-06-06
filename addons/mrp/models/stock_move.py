@@ -167,6 +167,14 @@ class StockMove(models.Model):
         return True
 
     @api.multi
+    def action_done(self):
+        if self.mapped('raw_material_production_id') or self.mapped('production_id'):
+            res = self.move_validate()
+        else:
+            res = super(StockMove, self).action_done()
+        return res
+
+    @api.multi
     def move_validate(self):
         '''
             Functions as an action_done (better to put this logic in action_done itself later on)
