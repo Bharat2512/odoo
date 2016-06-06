@@ -38,7 +38,7 @@ class Quant(models.Model):
         index=True, readonly=True,
         help="The move the quant is reserved for")
     lot_id = fields.Many2one(
-        'stock.production.lot', 'Lot',
+        'stock.production.lot', 'Lot/Serial Number',
         index=True, ondelete="restrict", readonly=True)
     cost = fields.Float('Unit Cost')
     owner_id = fields.Many2one(
@@ -238,7 +238,7 @@ class Quant(models.Model):
         picking_type = move.picking_id and move.picking_id.picking_type_id or False
         if lot_id and move.product_id.tracking == 'serial' and (not picking_type or (picking_type.use_create_lots or picking_type.use_existing_lots)):
             if qty != 1.0:
-                raise UserError(_('You should only receive by the piece with the same serial number'))
+                raise UserError(_('You should only receive by the piece with the same lot/serial number'))
             other_quants = self.search([('product_id', '=', move.product_id.id), ('lot_id', '=', lot_id),
                                         ('qty', '>', 0.0), ('location_id.usage', '=', 'internal')])
             if other_quants:
