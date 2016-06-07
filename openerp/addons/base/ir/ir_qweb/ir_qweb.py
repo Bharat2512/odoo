@@ -32,10 +32,12 @@ class IrQWeb(models.AbstractModel, QWeb):
 
     @api.model
     def render(self, id_or_xml_id, values=None, **options):
-        """ render(id_or_xml_id, values=None, **options)
-        Renders the template specified by the provided template name
-        :param values: context for rendering the template
-        :type values: dict or :class:`values` instance
+        """
+        :param 'id_or_xml_id' name or etree (see get_template)
+        :param 'values' is used to evaluate template values
+        'options' used to compile the template (the dict available for the rendering is frozen)
+        * load: function: overwrite load method
+        * profile: float: profile the rendering (use astor lib) (filter profile line with time ms >= profile)
         """
         for method in dir(self):
             if method.startswith('render_'):
@@ -107,7 +109,7 @@ class IrQWeb(models.AbstractModel, QWeb):
         if len(el):
             raise "t-call-assets cannot contain children nodes"
 
-        # self._get_asset(xmlid, options, css, js, debug, async, values)
+        # self._get_asset(xmlid, options, css=css, js=js, debug=values.get('debug'), async=async, values=values)
         return [
             self._append(ast.Call(
                 func=ast.Attribute(

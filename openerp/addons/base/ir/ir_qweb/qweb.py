@@ -241,8 +241,11 @@ class QWeb(object):
 
     def render(self, template, values=None, **options):
         """
-        'options' can be used by QWeb methods
-        'values' is used to evaluate template values
+        :param 'template' name or etree (see get_template)
+        :param 'values' is used to evaluate template values
+        'options' used to compile the template (the dict available for the rendering is frozen)
+        * load: function: overwrite load method
+        * profile: float: profile the rendering (use astor lib) (filter profile line with time ms >= profile)
         """
         body = []
         self.compile(template, options)(self, body.append, values or {})
@@ -403,6 +406,7 @@ class QWeb(object):
     def _profiling(self, astmod, options):
         code_line = astor.to_source(astmod)
 
+        # code = $code_lines.split(u"\n")
         astmod.body.insert(0, ast.Assign(
             targets=[ast.Name(id='code', ctx=ast.Store())],
             value=ast.Call(
@@ -417,6 +421,7 @@ class QWeb(object):
         ))
         code_line = [[l, False] for l in code_line.split('\n')]
 
+        # profiling = {}
         astmod.body.insert(0, ast.Assign(
             targets=[ast.Name(id='profiling', ctx=ast.Store())],
             value=ast.Dict(keys=[], values=[])
@@ -427,6 +432,7 @@ class QWeb(object):
         def prof(code, time):
             line_id[0] += 1
 
+            # profiling.setdefault($line_id, time() - $time)
             return ast.Expr(ast.Call(
                 func=ast.Attribute(
                     value=ast.Name(id='profiling', ctx=ast.Load()),
@@ -452,6 +458,8 @@ class QWeb(object):
             profile_body = []
             for code in body:
                 time = self._make_name('time')
+
+                # $time = time()
                 profile_body.append(
                     ast.Assign(
                         targets=[ast.Name(id=time, ctx=ast.Store())],
@@ -526,17 +534,18 @@ class QWeb(object):
 
     def _create_def(self, options, body, prefix='fn', lineno=None):
         """
-        If ``body`` is non-empty, generates (and globally store) the
-        corresponding function definition and returns the relevant ast.Call
-        node.
+        generates (and globally store) the corresponding function definition
+        and returns the relevant name.
         If ``body`` is empty, doesn't do anything and returns ``None``.
         Generates a "qweb function" definition:
-        * takes ``append`` method and ``values`` parameter
+        * takes ``self`` , ``append`` method, ``values``, ``options`` compile options, ``log``  parameters
+        :rtype string
         """
-        assert body, "To create a compiled function 'body' ast list can't be empty"
+        #assert body, "To create a compiled function 'body' ast list can't be empty"
 
         name = self._make_name(prefix)
 
+        # def $name(self, append, values, options, log)
         fn = ast.FunctionDef(
             name=name,
             args=ast.arguments(args=[
@@ -556,7 +565,7 @@ class QWeb(object):
         return name
 
     def _call_def(self, name, append='append', values='values'):
-
+        # $name(self, append, values, options, log)
         return ast.Call(
             func=ast.Name(id=name, ctx=ast.Load()),
             args=[
@@ -571,6 +580,7 @@ class QWeb(object):
 
     def _append(self, item):
         assert isinstance(item, ast.expr)
+        # append(ast item)
         return ast.Expr(ast.Call(
             func=ast.Name(id='append', ctx=ast.Load()),
             args=[item], keywords=[],
@@ -620,6 +630,9 @@ class QWeb(object):
         return "%s_%s" % (prefix, next(self._name_gen))
 
     def _compile_node(self, el, options):
+        """
+        :return ast list
+        """
         path = options['root'].getpath(el)
         if options['last_path_node'] != path:
             options['last_path_node'] = path
@@ -676,6 +689,7 @@ class QWeb(object):
         return compile_handler(el, options)
 
     def _values_var(self, varname, ctx):
+        # # values[$varname]
         return ast.Subscript(
             value=ast.Name(id='values', ctx=ast.Load()),
             slice=ast.Index(varname),
@@ -738,6 +752,7 @@ class QWeb(object):
             elif name.startswith('t-att-'):
                 nodes.append((name[6:], self._compile_expr(value)))
             elif name == 't-att':
+                # self._get_dynamic_att($tag, $value, options, values)
                 nodes.append(ast.Call(
                     func=ast.Attribute(
                         value=ast.Name(id='self', ctx=ast.Load()),
@@ -760,6 +775,7 @@ class QWeb(object):
             if not attr_already_created:
                 attr_already_created = True
                 body.append(
+                    # t_attrs = OrderedDict()
                     ast.Assign(
                         targets=[ast.Name(id='t_attrs', ctx=ast.Store())],
                         value=ast.Call(
@@ -773,6 +789,7 @@ class QWeb(object):
             items = self._serialize_static_attributes(el, options) + self._compile_dynamic_attributes(el, options)
             for item in items:
                 if isinstance(item, tuple):
+                    # t_attrs[$name] = $value
                     body.append(ast.Assign(
                         targets=[ast.Subscript(
                             value=ast.Name(id='t_attrs', ctx=ast.Load()),
@@ -782,6 +799,7 @@ class QWeb(object):
                         value=item[1]
                     ))
                 elif item:
+                    # t_attrs.update($item)
                     body.append(ast.Expr(ast.Call(
                         func=ast.Attribute(
                             value=ast.Name(id='t_attrs', ctx=ast.Load()),
@@ -847,6 +865,7 @@ class QWeb(object):
         return body
 
     def _compile_tag(self, el, content, options, attr_already_created=False):
+        # generate tag: <tag/> content or <tag>content</tag>
         body = [self._append(ast.Str(u'<%s' % el.tag))]
         body.extend(self._compile_all_attributes(el, options, attr_already_created))
         if el.tag in self._void_elements:
@@ -994,6 +1013,10 @@ class QWeb(object):
                 orelse = self._compile_node(next, dict(options, t_if=True))
                 next.getparent().remove(next)
         return [
+            # if $t-if:
+            #    next tag directive
+            # else:
+            #    $t-else
             ast.If(
                 test=self._compile_expr(el.attrib.pop('t-if')),
                 body=self._switch_directives(el, options),
@@ -1003,6 +1026,8 @@ class QWeb(object):
 
     def _compile_directive_groups(self, el, options):
         return [
+            # if self.user_has_groups($groups):
+            #    next tag directive
             ast.If(
                 test=ast.Call(
                     func=ast.Attribute(
