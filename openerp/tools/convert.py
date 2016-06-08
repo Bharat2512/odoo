@@ -812,13 +812,13 @@ form: module.record_id""" % (xml_id,)
         return True
 
     def __init__(self, cr, module, idref, mode, report=None, noupdate=False, xml_filename=None):
-
         self.mode = mode
         self.module = module
+        self.env = openerp.api.Environment(cr, SUPERUSER_ID, {})
         self.cr = cr
+        self.uid = SUPERUSER_ID
         self.idref = idref
         self.pool = openerp.registry(cr.dbname)
-        self.uid = 1
         if report is None:
             report = assertion_report.assertion_report()
         self.assertion_report = report
