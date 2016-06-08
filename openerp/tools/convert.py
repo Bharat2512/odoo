@@ -49,6 +49,18 @@ class ParseError(Exception):
         return '"%s" while parsing %s:%s, near\n%s' \
             % (self.msg, self.filename, self.lineno, self.text)
 
+class RecordDictWrapper(dict):
+    """
+    Used to pass a record as locals in eval:
+    records do not strictly behave like dict, so we force them to.
+    """
+    def __init__(self, record):
+        self.record = record
+    def __getitem__(self, key):
+        if key in self.record:
+            return self.record[key]
+        return dict.__getitem__(self, key)
+
 def _get_idref(self, env, model_str, idref):
     idref2 = dict(idref,
                   time=time,
@@ -583,12 +595,7 @@ form: module.record_id""" % (xml_id,)
             'You must give either an id or a search criteria'
         ref = self.id_get
         for record in records:
-            class d(dict):
-                def __getitem__(self2, key):
-                    if key in record:
-                        return record[key]
-                    return dict.__getitem__(self2, key)
-            globals_dict = d()
+            globals_dict = RecordDictWrapper(record)
             globals_dict['floatEqual'] = self._assert_equals
             globals_dict['ref'] = ref
             globals_dict['_ref'] = ref
