@@ -239,7 +239,7 @@ class xml_import(object):
 maximum one dot. They are used to refer to other modules ID, in the
 form: module.record_id""" % (xml_id,)
             if module != self.module:
-                modcnt = self.pool['ir.module.module'].search_count(self.cr, self.uid, ['&', ('name', '=', module), ('state', 'in', ['installed'])])
+                modcnt = self.env['ir.module.module'].search_count([('name', '=', module), ('state', '=', 'installed')])
                 assert modcnt == 1, """The ID "%s" refers to an uninstalled module""" % (xml_id,)
 
         if len(id) > 64:
@@ -249,31 +249,30 @@ form: module.record_id""" % (xml_id,)
         d_model = rec.get("model")
         d_search = rec.get("search",'').encode('utf-8')
         d_id = rec.get("id")
-        ids = []
+        records = self.env[d_model]
 
         if d_search:
             idref = _get_idref(self, self.env, d_model, {})
             try:
-                ids = self.pool[d_model].search(cr, self.uid, unsafe_eval(d_search, idref))
+                records = records.search(unsafe_eval(d_search, idref))
             except ValueError:
                 _logger.warning('Skipping deletion for failed search `%r`', d_search, exc_info=True)
                 pass
         if d_id:
             try:
-                ids.append(self.id_get(d_id))
+                records += records.browse(self.id_get(d_id))
             except ValueError:
                 # d_id cannot be found. doesn't matter in this case
                 _logger.warning('Skipping deletion for missing XML ID `%r`', d_id, exc_info=True)
                 pass
-        if ids:
-            self.pool[d_model].unlink(cr, self.uid, ids)
+        if records:
+            records.unlink()
 
     def _remove_ir_values(self, cr, name, value, model):
-        ir_values_obj = self.pool['ir.values']
-        ir_value_ids = ir_values_obj.search(cr, self.uid, [('name','=',name),('value','=',value),('model','=',model)])
-        if ir_value_ids:
-            ir_values_obj.unlink(cr, self.uid, ir_value_ids)
-
+        domain = [('name', '=', name), ('value', '=', value), ('model', '=', model)]
+        ir_values = self.env['ir.values'].search(domain)
+        if ir_values:
+            ir_values.unlink()
         return True
 
     def _tag_report(self, cr, rec, data_node=None, mode=None):
@@ -315,19 +314,19 @@ form: module.record_id""" % (xml_id,)
             pf_id = self.id_get(pf_name)
             res['paperformat_id'] = pf_id
 
-        id = self.pool['ir.model.data']._update(cr, self.uid, "ir.actions.report.xml", self.module, res, xml_id, noupdate=self.isnoupdate(data_node), mode=self.mode)
+        id = self.env['ir.model.data']._update("ir.actions.report.xml", self.module, res, xml_id, noupdate=self.isnoupdate(data_node), mode=self.mode)
         self.idref[xml_id] = int(id)
 
         if not rec.get('menu') or eval(rec.get('menu','False')):
             keyword = str(rec.get('keyword', 'client_print_multi'))
             value = 'ir.actions.report.xml,'+str(id)
-            ir_values_id = self.pool['ir.values'].set_action(cr, self.uid, res['name'], keyword, res['model'], value)
-            self.pool['ir.actions.report.xml'].write(cr, self.uid, id, {'ir_values_id': ir_values_id})
+            action = self.env['ir.values'].set_action(res['name'], keyword, res['model'], value)
+            self.env['ir.actions.report.xml'].browse(id).write({'ir_values_id': action.id})
         elif self.mode=='update' and eval(rec.get('menu','False'))==False:
             # Special check for report having attribute menu=False on update
             value = 'ir.actions.report.xml,'+str(id)
             self._remove_ir_values(cr, res['name'], value, res['model'])
-            self.pool['ir.actions.report.xml'].write(cr, self.uid, id, {'ir_values_id': False})
+            self.env['ir.actions.report.xml'].browse(id).write({'ir_values_id': False})
         return id
 
     def _tag_function(self, cr, rec, data_node=None, mode=None):
@@ -433,7 +432,7 @@ form: module.record_id""" % (xml_id,)
             res['target'] = rec.get('target','')
         if rec.get('multi'):
             res['multi'] = eval(rec.get('multi', 'False'))
-        id = self.pool['ir.model.data']._update(cr, self.uid, 'ir.actions.act_window', self.module, res, xml_id, noupdate=self.isnoupdate(data_node), mode=self.mode)
+        id = self.env['ir.model.data']._update('ir.actions.act_window', self.module, res, xml_id, noupdate=self.isnoupdate(data_node), mode=self.mode)
         self.idref[xml_id] = int(id)
 
         if src_model:
@@ -441,7 +440,7 @@ form: module.record_id""" % (xml_id,)
             keyword = rec.get('key2','').encode('utf-8') or 'client_action_relate'
             value = 'ir.actions.act_window,'+str(id)
             replace = rec.get('replace','') or True
-            self.pool['ir.model.data'].ir_set(cr, self.uid, 'action', keyword, xml_id, [src_model], value, replace=replace, isobject=True, xml_id=xml_id)
+            self.env['ir.model.data'].ir_set('action', keyword, xml_id, [src_model], value, replace=replace, isobject=True, xml_id=xml_id)
         # TODO add remove ir.model.data
 
     def _tag_ir_set(self, cr, rec, data_node=None, mode=None):
@@ -457,7 +456,7 @@ form: module.record_id""" % (xml_id,)
             f_name = field.get("name",'').encode('utf-8')
             f_val = _eval_xml(self, field, self.env)
             res[f_name] = f_val
-        self.pool['ir.model.data'].ir_set(cr, self.uid, res['key'], res['key2'], res['name'], res['models'], res['value'], replace=res.get('replace',True), isobject=res.get('isobject', False), meta=res.get('meta',None))
+        self.env['ir.model.data'].ir_set(res['key'], res['key2'], res['name'], res['models'], res['value'], replace=res.get('replace',True), isobject=res.get('isobject', False), meta=res.get('meta',None))
 
     def _tag_workflow(self, cr, rec, data_node=None, mode=None):
         if self.isnoupdate(data_node) and self.mode != 'init':
@@ -475,8 +474,8 @@ form: module.record_id""" % (xml_id,)
             id = _eval_xml(self, rec[0], self.env)
 
         uid = self.get_uid(data_node, rec)
-        openerp.workflow.trg_validate(
-            uid, model, id, rec.get('action').encode('ascii'), cr)
+        record = self.env(user=uid)[model].browse(id)
+        record.signal_workflow(rec.get('action').encode('ascii'))
 
     def _tag_menuitem(self, cr, rec, data_node=None, mode=None):
         rec_id = rec.get("id",'').encode('ascii')
@@ -508,8 +507,8 @@ form: module.record_id""" % (xml_id,)
 
             if not values.get('name') and action_type in ('act_window', 'wizard', 'url', 'client', 'server'):
                 a_table = 'ir_act_%s' % action_type.replace('act_', '')
-                cr.execute('select name from "%s" where id=%%s' % a_table, (int(action_id),))
-                resw = cr.fetchone()
+                self.cr.execute('select name from "%s" where id=%%s' % a_table, (int(action_id),))
+                resw = self.cr.fetchone()
                 if resw:
                     values['name'] = resw[0]
 
@@ -536,7 +535,7 @@ form: module.record_id""" % (xml_id,)
             if rec.get('web_icon'):
                 values['web_icon'] = rec.get('web_icon')
 
-        pid = self.pool['ir.model.data']._update(cr, self.uid, 'ir.ui.menu', self.module, values, rec_id, noupdate=self.isnoupdate(data_node), mode=self.mode, res_id=res and res[0] or False)
+        pid = self.env['ir.model.data']._update('ir.ui.menu', self.module, values, rec_id, noupdate=self.isnoupdate(data_node), mode=self.mode, res_id=res and res[0] or False)
 
         if rec_id and pid:
             self.idref[rec_id] = int(pid)
@@ -551,7 +550,6 @@ form: module.record_id""" % (xml_id,)
             return
 
         rec_model = rec.get("model",'').encode('ascii')
-        model = self.pool[rec_model]
         rec_id = rec.get("id",'').encode('ascii')
         self._test_xml_id(rec_id)
         rec_src = rec.get("search",'').encode('utf8')
@@ -559,36 +557,36 @@ form: module.record_id""" % (xml_id,)
 
         rec_string = rec.get("string",'').encode('utf8') or 'unknown'
 
-        ids = None
+        records = None
         eval_dict = {'ref': self.id_get}
         context = self.get_context(data_node, rec, eval_dict)
         uid = self.get_uid(data_node, rec)
+        env = self.env(user=uid, context=context)
         if rec_id:
-            ids = [self.id_get(rec_id)]
+            records = env[rec_model].browse(self.id_get(rec_id))
         elif rec_src:
             q = unsafe_eval(rec_src, eval_dict)
-            ids = self.pool[rec_model].search(cr, uid, q, context=context)
+            records = env[rec_model].search(q)
             if rec_src_count:
                 count = int(rec_src_count)
-                if len(ids) != count:
+                if len(records) != count:
                     self.assertion_report.record_failure()
                     msg = 'assertion "%s" failed!\n'    \
                           ' Incorrect search count:\n'  \
                           ' expected count: %d\n'       \
                           ' obtained count: %d\n'       \
-                          % (rec_string, count, len(ids))
+                          % (rec_string, count, len(records))
                     _logger.error(msg)
                     return
 
-        assert ids is not None,\
+        assert records is not None,\
             'You must give either an id or a search criteria'
         ref = self.id_get
-        for id in ids:
-            brrec =  model.browse(cr, uid, id, context)
+        for record in records:
             class d(dict):
                 def __getitem__(self2, key):
-                    if key in brrec:
-                        return brrec[key]
+                    if key in record:
+                        return record[key]
                     return dict.__getitem__(self2, key)
             globals_dict = d()
             globals_dict['floatEqual'] = self._assert_equals
@@ -613,7 +611,7 @@ form: module.record_id""" % (xml_id,)
 
     def _tag_record(self, cr, rec, data_node=None, mode=None):
         rec_model = rec.get("model").encode('ascii')
-        model = self.pool[rec_model]
+        model = self.env[rec_model]
         rec_id = rec.get("id",'').encode('ascii')
         rec_context = rec.get("context", {})
         if rec_context:
@@ -641,7 +639,7 @@ form: module.record_id""" % (xml_id,)
             else:
                 module = self.module
                 rec_id2 = rec_id
-            id = self.pool['ir.model.data']._update_dummy(cr, self.uid, rec_model, module, rec_id2)
+            id = self.env['ir.model.data']._update_dummy(rec_model, module, rec_id2)
             if id:
                 # if the resource already exists, don't update it but store
                 # its database id (can be useful)
@@ -667,11 +665,10 @@ form: module.record_id""" % (xml_id,)
             if f_search:
                 q = unsafe_eval(f_search, self.idref)
                 assert f_model, 'Define an attribute model="..." in your .XML file !'
-                f_obj = self.pool[f_model]
                 # browse the objects searched
-                s = f_obj.browse(cr, self.uid, f_obj.search(cr, self.uid, q))
+                s = self.env[f_model].search(q)
                 # column definitions of the "local" object
-                _fields = self.pool[rec_model]._fields
+                _fields = self.env[rec_model]._fields
                 # if the current field is many2many
                 if (f_name in _fields) and _fields[f_name].type == 'many2many':
                     f_val = [(6, 0, map(lambda x: x[f_use], s))]
@@ -694,11 +691,11 @@ form: module.record_id""" % (xml_id,)
                         f_val = float(f_val)
             res[f_name] = f_val
 
-        id = self.pool['ir.model.data']._update(cr, self.uid, rec_model, self.module, res, rec_id or False, not self.isnoupdate(data_node), noupdate=self.isnoupdate(data_node), mode=self.mode, context=rec_context )
+        id = self.env(context=rec_context)['ir.model.data']._update(rec_model, self.module, res, rec_id or False, not self.isnoupdate(data_node), noupdate=self.isnoupdate(data_node), mode=self.mode)
         if rec_id:
             self.idref[rec_id] = int(id)
         if config.get('import_partial'):
-            cr.commit()
+            self.cr.commit()
         return rec_model, id
 
     def _tag_template(self, cr, el, data_node=None, mode=None):
@@ -799,7 +796,6 @@ form: module.record_id""" % (xml_id,)
         self.cr = cr
         self.uid = SUPERUSER_ID
         self.idref = idref
-        self.pool = openerp.registry(cr.dbname)
         if report is None:
             report = assertion_report.assertion_report()
         self.assertion_report = report
