@@ -245,7 +245,7 @@ form: module.record_id""" % (xml_id,)
         if len(id) > 64:
             _logger.error('id: %s is to long (max: 64)', id)
 
-    def _tag_delete(self, cr, rec, data_node=None, mode=None):
+    def _tag_delete(self, rec, data_node=None, mode=None):
         d_model = rec.get("model")
         d_search = rec.get("search",'').encode('utf-8')
         d_id = rec.get("id")
@@ -268,14 +268,14 @@ form: module.record_id""" % (xml_id,)
         if records:
             records.unlink()
 
-    def _remove_ir_values(self, cr, name, value, model):
+    def _remove_ir_values(self, name, value, model):
         domain = [('name', '=', name), ('value', '=', value), ('model', '=', model)]
         ir_values = self.env['ir.values'].search(domain)
         if ir_values:
             ir_values.unlink()
         return True
 
-    def _tag_report(self, cr, rec, data_node=None, mode=None):
+    def _tag_report(self, rec, data_node=None, mode=None):
         res = {}
         for dest,f in (('name','string'),('model','model'),('report_name','name')):
             res[dest] = rec.get(f,'').encode('utf8')
@@ -325,11 +325,11 @@ form: module.record_id""" % (xml_id,)
         elif self.mode=='update' and eval(rec.get('menu','False'))==False:
             # Special check for report having attribute menu=False on update
             value = 'ir.actions.report.xml,'+str(id)
-            self._remove_ir_values(cr, res['name'], value, res['model'])
+            self._remove_ir_values(res['name'], value, res['model'])
             self.env['ir.actions.report.xml'].browse(id).write({'ir_values_id': False})
         return id
 
-    def _tag_function(self, cr, rec, data_node=None, mode=None):
+    def _tag_function(self, rec, data_node=None, mode=None):
         if self.isnoupdate(data_node) and self.mode != 'init':
             return
         context = self.get_context(data_node, rec, {'ref': self.id_get})
@@ -338,7 +338,7 @@ form: module.record_id""" % (xml_id,)
         _eval_xml(self, rec, env)
         return
 
-    def _tag_act_window(self, cr, rec, data_node=None, mode=None):
+    def _tag_act_window(self, rec, data_node=None, mode=None):
         name = rec.get('name','').encode('utf-8')
         xml_id = rec.get('id','').encode('utf8')
         self._test_xml_id(xml_id)
@@ -443,7 +443,7 @@ form: module.record_id""" % (xml_id,)
             self.env['ir.model.data'].ir_set('action', keyword, xml_id, [src_model], value, replace=replace, isobject=True, xml_id=xml_id)
         # TODO add remove ir.model.data
 
-    def _tag_ir_set(self, cr, rec, data_node=None, mode=None):
+    def _tag_ir_set(self, rec, data_node=None, mode=None):
         """
             .. deprecated:: 9.0
 
@@ -458,7 +458,7 @@ form: module.record_id""" % (xml_id,)
             res[f_name] = f_val
         self.env['ir.model.data'].ir_set(res['key'], res['key2'], res['name'], res['models'], res['value'], replace=res.get('replace',True), isobject=res.get('isobject', False), meta=res.get('meta',None))
 
-    def _tag_workflow(self, cr, rec, data_node=None, mode=None):
+    def _tag_workflow(self, rec, data_node=None, mode=None):
         if self.isnoupdate(data_node) and self.mode != 'init':
             return
         model = rec.get('model').encode('ascii')
@@ -477,7 +477,7 @@ form: module.record_id""" % (xml_id,)
         record = self.env(user=uid)[model].browse(id)
         record.signal_workflow(rec.get('action').encode('ascii'))
 
-    def _tag_menuitem(self, cr, rec, data_node=None, mode=None):
+    def _tag_menuitem(self, rec, data_node=None, mode=None):
         rec_id = rec.get("id",'').encode('ascii')
         self._test_xml_id(rec_id)
 
@@ -545,7 +545,7 @@ form: module.record_id""" % (xml_id,)
     def _assert_equals(self, f1, f2, prec=4):
         return not round(f1 - f2, prec)
 
-    def _tag_assert(self, cr, rec, data_node=None, mode=None):
+    def _tag_assert(self, rec, data_node=None, mode=None):
         if self.isnoupdate(data_node) and self.mode != 'init':
             return
 
@@ -609,7 +609,7 @@ form: module.record_id""" % (xml_id,)
         else: # all tests were successful for this assertion tag (no break)
             self.assertion_report.record_success()
 
-    def _tag_record(self, cr, rec, data_node=None, mode=None):
+    def _tag_record(self, rec, data_node=None, mode=None):
         rec_model = rec.get("model").encode('ascii')
         model = self.env[rec_model]
         rec_id = rec.get("id",'').encode('ascii')
@@ -698,7 +698,7 @@ form: module.record_id""" % (xml_id,)
             self.cr.commit()
         return rec_model, id
 
-    def _tag_template(self, cr, el, data_node=None, mode=None):
+    def _tag_template(self, el, data_node=None, mode=None):
         # This helper transforms a <template> element into a <record> and forwards it
         tpl_id = el.get('id', el.get('t-name', '')).encode('ascii')
         full_tpl_id = tpl_id
@@ -760,7 +760,7 @@ form: module.record_id""" % (xml_id,)
         # the ``arch`` field
         record.append(Field(el, name="arch", type="xml"))
 
-        return self._tag_record(cr, record, data_node)
+        return self._tag_record(record, data_node)
 
     def id_get(self, id_str, raise_if_not_found=True):
         if id_str in self.idref:
@@ -782,7 +782,7 @@ form: module.record_id""" % (xml_id,)
                 self.parse(rec, mode)
             elif rec.tag in self._tags:
                 try:
-                    self._tags[rec.tag](self.cr, rec, de, mode=mode)
+                    self._tags[rec.tag](rec, de, mode=mode)
                 except Exception, e:
                     self.cr.rollback()
                     exc_info = sys.exc_info()
