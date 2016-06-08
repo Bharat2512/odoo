@@ -85,9 +85,7 @@ def _fix_multiple_roots(node):
             data_node.append(child)
         node.append(data_node)
 
-def _eval_xml(self, node, pool, cr, uid, idref, context=None):
-    if context is None:
-        context = {}
+def _eval_xml(self, node, env):
     if node.tag in ('field','value'):
         t = node.get('type','char')
         f_model = node.get('model', '').encode('utf-8')
@@ -97,12 +95,12 @@ def _eval_xml(self, node, pool, cr, uid, idref, context=None):
             f_name = node.get("name",'').encode('utf-8')
             idref2 = {}
             if f_search:
-                idref2 = _get_idref(self, cr, uid, f_model, context, idref)
+                idref2 = _get_idref(self, env.cr, env.uid, f_model, env.context, self.idref)
             q = unsafe_eval(f_search, idref2)
-            ids = pool[f_model].search(cr, uid, q)
+            ids = env[f_model].search(q).ids
             if f_use != 'id':
-                ids = map(lambda x: x[f_use], pool[f_model].read(cr, uid, ids, [f_use]))
-            _cols = pool[f_model]._columns
+                ids = map(lambda x: x[f_use], env[f_model].browse(ids).read([f_use]))
+            _cols = env[f_model]._columns
             if (f_name in _cols) and _cols[f_name]._type=='many2many':
                 return ids
             f_val = False
@@ -113,14 +111,14 @@ def _eval_xml(self, node, pool, cr, uid, idref, context=None):
             return f_val
         a_eval = node.get('eval','')
         if a_eval:
-            idref2 = _get_idref(self, cr, uid, f_model, context, idref)
+            idref2 = _get_idref(self, env.cr, env.uid, f_model, env.context, self.idref)
             try:
                 return unsafe_eval(a_eval, idref2)
             except Exception:
                 logging.getLogger('openerp.tools.convert.init').error(
-                    'Could not eval(%s) for %s in %s', a_eval, node.get('name'), context)
+                    'Could not eval(%s) for %s in %s', a_eval, node.get('name'), env.context)
                 raise
-        def _process(s, idref):
+        def _process(s):
             matches = re.finditer('[^%]%\((.*?)\)[ds]', s)
             done = []
             for m in matches:
@@ -129,22 +127,18 @@ def _eval_xml(self, node, pool, cr, uid, idref, context=None):
                     continue
                 done.append(found)
                 id = m.groups()[0]
-                if not id in idref:
-                    idref[id] = self.id_get(id)
-                s = s.replace(found, str(idref[id]))
-
+                if not id in self.idref:
+                    self.idref[id] = self.id_get(id)
+                s = s.replace(found, str(self.idref[id]))
             s = s.replace('%%', '%') # Quite wierd but it's for (somewhat) backward compatibility sake
-
             return s
 
         if t == 'xml':
             _fix_multiple_roots(node)
             return '<?xml version="1.0"?>\n'\
-                +_process("".join([etree.tostring(n, encoding='utf-8')
-                                   for n in node]), idref)
+                +_process("".join([etree.tostring(n, encoding='utf-8') for n in node]))
         if t == 'html':
-            return _process("".join([etree.tostring(n, encoding='utf-8')
-                                   for n in node]), idref)
+            return _process("".join([etree.tostring(n, encoding='utf-8') for n in node]))
 
         data = node.text
         if node.get('file'):
@@ -177,7 +171,7 @@ def _eval_xml(self, node, pool, cr, uid, idref, context=None):
         if t in ('list','tuple'):
             res=[]
             for n in node.iterchildren(tag='value'):
-                res.append(_eval_xml(self,n,pool,cr,uid,idref))
+                res.append(_eval_xml(self, n, env))
             if t=='tuple':
                 return tuple(res)
             return res
@@ -186,15 +180,15 @@ def _eval_xml(self, node, pool, cr, uid, idref, context=None):
         a_eval = node.get('eval','')
         # FIXME: should probably be exclusive
         if a_eval:
-            idref['ref'] = self.id_get
-            args = unsafe_eval(a_eval, idref)
+            self.idref['ref'] = self.id_get
+            args = unsafe_eval(a_eval, self.idref)
         for n in node:
-            return_val = _eval_xml(self,n, pool, cr, uid, idref, context)
+            return_val = _eval_xml(self, n, env)
             if return_val is not None:
                 args.append(return_val)
-        model = pool[node.get('model', '')]
+        model = env[node.get('model', '')]
         method = node.get('name')
-        res = getattr(model, method)(cr, uid, *args)
+        res = getattr(model, method)(*args)
         return res
     elif node.tag == "test":
         return node.text
@@ -345,7 +339,8 @@ form: module.record_id""" % (xml_id,)
             return
         context = self.get_context(data_node, rec, {'ref': self.id_get})
         uid = self.get_uid(data_node, rec)
-        _eval_xml(self,rec, self.pool, cr, uid, self.idref, context=context)
+        env = self.env(user=uid, context=context)
+        _eval_xml(self, rec, env)
         return
 
     def _tag_act_window(self, cr, rec, data_node=None, mode=None):
@@ -464,7 +459,7 @@ form: module.record_id""" % (xml_id,)
         res = {}
         for field in rec.findall('./field'):
             f_name = field.get("name",'').encode('utf-8')
-            f_val = _eval_xml(self,field,self.pool, cr, self.uid, self.idref)
+            f_val = _eval_xml(self, field, self.env)
             res[f_name] = f_val
         self.pool['ir.model.data'].ir_set(cr, self.uid, res['key'], res['key2'], res['name'], res['models'], res['value'], replace=res.get('replace',True), isobject=res.get('isobject', False), meta=res.get('meta',None))
 
@@ -481,7 +476,7 @@ form: module.record_id""" % (xml_id,)
                 'You must define a child node if you dont give a ref'
             assert number_children == 1,\
                 'Only one child node is accepted (%d given)' % number_children
-            id = _eval_xml(self, rec[0], self.pool, cr, self.uid, self.idref)
+            id = _eval_xml(self, rec[0], self.env)
 
         uid = self.get_uid(data_node, rec)
         openerp.workflow.trg_validate(
@@ -605,7 +600,8 @@ form: module.record_id""" % (xml_id,)
             globals_dict['_ref'] = ref
             for test in rec.findall('./test'):
                 f_expr = test.get("expr",'').encode('utf-8')
-                expected_value = _eval_xml(self, test, self.pool, cr, uid, self.idref, context=context) or True
+                env = self.env(user=uid, context=context)
+                expected_value = _eval_xml(self, test, env) or True
                 expression_value = unsafe_eval(f_expr, globals_dict)
                 if expression_value != expected_value: # assertion failed
                     self.assertion_report.record_failure()
@@ -694,7 +690,7 @@ form: module.record_id""" % (xml_id,)
                 else:
                     f_val = self.id_get(f_ref)
             else:
-                f_val = _eval_xml(self,field, self.pool, cr, self.uid, self.idref)
+                f_val = _eval_xml(self, field, self.env)
                 if f_name in model._fields:
                     if model._fields[f_name].type == 'integer':
                         f_val = int(f_val)
