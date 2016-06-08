@@ -678,7 +678,12 @@ class YamlInterpreter(object):
         else:
             args = self._eval_params(function.model, params)
         method = function.name
-        getattr(model, method)(*args)
+        api = getattr(getattr(model, method).im_func, '_api', None)
+        if api in (openerp.api.multi, openerp.api.cr_uid_ids, openerp.api.cr_uid_ids_context):
+            records = model.browse(args[0])
+            getattr(records, method)(*args[1:])
+        else:
+            getattr(model, method)(*args)
 
     def _set_group_values(self, node, values):
         if node.groups:
