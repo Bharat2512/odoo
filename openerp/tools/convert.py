@@ -49,11 +49,7 @@ class ParseError(Exception):
         return '"%s" while parsing %s:%s, near\n%s' \
             % (self.msg, self.filename, self.lineno, self.text)
 
-def _obj(pool, cr, uid, model_str, context=None):
-    model = pool[model_str]
-    return lambda x: model.browse(cr, uid, x, context=context)
-
-def _get_idref(self, cr, uid, model_str, context, idref):
+def _get_idref(self, env, model_str, idref):
     idref2 = dict(idref,
                   time=time,
                   DateTime=datetime,
@@ -63,8 +59,8 @@ def _get_idref(self, cr, uid, model_str, context, idref):
                   version=openerp.release.major_version,
                   ref=self.id_get,
                   pytz=pytz)
-    if len(model_str):
-        idref2['obj'] = _obj(self.pool, cr, uid, model_str, context=context)
+    if model_str:
+        idref2['obj'] = env[model_str].browse
     return idref2
 
 def _fix_multiple_roots(node):
@@ -95,7 +91,7 @@ def _eval_xml(self, node, env):
             f_name = node.get("name",'').encode('utf-8')
             idref2 = {}
             if f_search:
-                idref2 = _get_idref(self, env.cr, env.uid, f_model, env.context, self.idref)
+                idref2 = _get_idref(self, env, f_model, self.idref)
             q = unsafe_eval(f_search, idref2)
             ids = env[f_model].search(q).ids
             if f_use != 'id':
@@ -111,7 +107,7 @@ def _eval_xml(self, node, env):
             return f_val
         a_eval = node.get('eval','')
         if a_eval:
-            idref2 = _get_idref(self, env.cr, env.uid, f_model, env.context, self.idref)
+            idref2 = _get_idref(self, env, f_model, self.idref)
             try:
                 return unsafe_eval(a_eval, idref2)
             except Exception:
@@ -256,7 +252,7 @@ form: module.record_id""" % (xml_id,)
         ids = []
 
         if d_search:
-            idref = _get_idref(self, cr, self.uid, d_model, context={}, idref={})
+            idref = _get_idref(self, self.env, d_model, {})
             try:
                 ids = self.pool[d_model].search(cr, self.uid, unsafe_eval(d_search, idref))
             except ValueError:
