@@ -49,9 +49,6 @@ class ParseError(Exception):
         return '"%s" while parsing %s:%s, near\n%s' \
             % (self.msg, self.filename, self.lineno, self.text)
 
-def _ref(self, cr):
-    return lambda x: self.id_get(cr, x)
-
 def _obj(pool, cr, uid, model_str, context=None):
     model = pool[model_str]
     return lambda x: model.browse(cr, uid, x, context=context)
@@ -64,7 +61,7 @@ def _get_idref(self, cr, uid, model_str, context, idref):
                   timedelta=timedelta,
                   relativedelta=relativedelta,
                   version=openerp.release.major_version,
-                  ref=_ref(self, cr),
+                  ref=self.id_get,
                   pytz=pytz)
     if len(model_str):
         idref2['obj'] = _obj(self.pool, cr, uid, model_str, context=context)
@@ -133,7 +130,7 @@ def _eval_xml(self, node, pool, cr, uid, idref, context=None):
                 done.append(found)
                 id = m.groups()[0]
                 if not id in idref:
-                    idref[id] = self.id_get(cr, id)
+                    idref[id] = self.id_get(id)
                 s = s.replace(found, str(idref[id]))
 
             s = s.replace('%%', '%') # Quite wierd but it's for (somewhat) backward compatibility sake
@@ -189,7 +186,7 @@ def _eval_xml(self, node, pool, cr, uid, idref, context=None):
         a_eval = node.get('eval','')
         # FIXME: should probably be exclusive
         if a_eval:
-            idref['ref'] = lambda x: self.id_get(cr, x)
+            idref['ref'] = self.id_get
             args = unsafe_eval(a_eval, idref)
         for n in node:
             return_val = _eval_xml(self,n, pool, cr, uid, idref, context)
@@ -238,11 +235,11 @@ class xml_import(object):
                                                     ctx, node.get('id','n/a'), exc_info=True)
         return context
 
-    def get_uid(self, cr, uid, data_node, node):
+    def get_uid(self, data_node, node):
         node_uid = node.get('uid','') or (len(data_node) and data_node.get('uid',''))
         if node_uid:
-            return self.id_get(cr, node_uid)
-        return uid
+            return self.id_get(node_uid)
+        return self.uid
 
     def _test_xml_id(self, xml_id):
         id = xml_id
@@ -273,7 +270,7 @@ form: module.record_id""" % (xml_id,)
                 pass
         if d_id:
             try:
-                ids.append(self.id_get(cr, d_id))
+                ids.append(self.id_get(d_id))
             except ValueError:
                 # d_id cannot be found. doesn't matter in this case
                 _logger.warning('Skipping deletion for missing XML ID `%r`', d_id, exc_info=True)
@@ -317,15 +314,15 @@ form: module.record_id""" % (xml_id,)
             groups_value = []
             for group in g_names:
                 if group.startswith('-'):
-                    group_id = self.id_get(cr, group[1:])
+                    group_id = self.id_get(group[1:])
                     groups_value.append((3, group_id))
                 else:
-                    group_id = self.id_get(cr, group)
+                    group_id = self.id_get(group)
                     groups_value.append((4, group_id))
             res['groups_id'] = groups_value
         if rec.get('paperformat'):
             pf_name = rec.get('paperformat')
-            pf_id = self.id_get(cr,pf_name)
+            pf_id = self.id_get(pf_name)
             res['paperformat_id'] = pf_id
 
         id = self.pool['ir.model.data']._update(cr, self.uid, "ir.actions.report.xml", self.module, res, xml_id, noupdate=self.isnoupdate(data_node), mode=self.mode)
@@ -346,8 +343,8 @@ form: module.record_id""" % (xml_id,)
     def _tag_function(self, cr, rec, data_node=None, mode=None):
         if self.isnoupdate(data_node) and self.mode != 'init':
             return
-        context = self.get_context(data_node, rec, {'ref': _ref(self, cr)})
-        uid = self.get_uid(cr, self.uid, data_node, rec)
+        context = self.get_context(data_node, rec, {'ref': self.id_get})
+        uid = self.get_uid(data_node, rec)
         _eval_xml(self,rec, self.pool, cr, uid, self.idref, context=context)
         return
 
@@ -358,7 +355,7 @@ form: module.record_id""" % (xml_id,)
         type = rec.get('type','').encode('utf-8') or 'ir.actions.act_window'
         view_id = False
         if rec.get('view_id'):
-            view_id = self.id_get(cr, rec.get('view_id','').encode('utf-8'))
+            view_id = self.id_get(rec.get('view_id','').encode('utf-8'))
         domain = rec.get('domain','').encode('utf-8') or '[]'
         res_model = rec.get('res_model','').encode('utf-8')
         src_model = rec.get('src_model','').encode('utf-8')
@@ -383,9 +380,6 @@ form: module.record_id""" % (xml_id,)
         active_ids = unquote("active_ids")
         active_model = unquote("active_model")
 
-        def ref(str_id):
-            return self.id_get(cr, str_id)
-
         # Include all locals() in eval_context, for backwards compatibility
         eval_context = {
             'name': name,
@@ -404,7 +398,7 @@ form: module.record_id""" % (xml_id,)
             'active_id': active_id,
             'active_ids': active_ids,
             'active_model': active_model,
-            'ref' : ref,
+            'ref': self.id_get,
         }
         context = self.get_context(data_node, rec, eval_context)
 
@@ -437,10 +431,10 @@ form: module.record_id""" % (xml_id,)
             groups_value = []
             for group in g_names:
                 if group.startswith('-'):
-                    group_id = self.id_get(cr, group[1:])
+                    group_id = self.id_get(group[1:])
                     groups_value.append((3, group_id))
                 else:
-                    group_id = self.id_get(cr, group)
+                    group_id = self.id_get(group)
                     groups_value.append((4, group_id))
             res['groups_id'] = groups_value
 
@@ -480,7 +474,7 @@ form: module.record_id""" % (xml_id,)
         model = rec.get('model').encode('ascii')
         w_ref = rec.get('ref')
         if w_ref:
-            id = self.id_get(cr, w_ref)
+            id = self.id_get(w_ref)
         else:
             number_children = len(rec)
             assert number_children > 0,\
@@ -489,7 +483,7 @@ form: module.record_id""" % (xml_id,)
                 'Only one child node is accepted (%d given)' % number_children
             id = _eval_xml(self, rec[0], self.pool, cr, self.uid, self.idref)
 
-        uid = self.get_uid(cr, self.uid, data_node, rec)
+        uid = self.get_uid(data_node, rec)
         openerp.workflow.trg_validate(
             uid, model, id, rec.get('action').encode('ascii'), cr)
 
@@ -500,7 +494,7 @@ form: module.record_id""" % (xml_id,)
         # The parent attribute was specified, if non-empty determine its ID, otherwise
         # explicitly make a top-level menu
         if rec.get('parent'):
-            menu_parent_id = self.id_get(cr, rec.get('parent',''))
+            menu_parent_id = self.id_get(rec.get('parent',''))
         else:
             # we get here with <menuitem parent="">, explicit clear of parent, or
             # if no parent attribute at all but menu name is not a menu path
@@ -509,7 +503,7 @@ form: module.record_id""" % (xml_id,)
         if rec.get('name'):
             values['name'] = rec.get('name')
         try:
-            res = [ self.id_get(cr, rec.get('id','')) ]
+            res = [ self.id_get(rec.get('id','')) ]
         except:
             res = None
 
@@ -517,7 +511,7 @@ form: module.record_id""" % (xml_id,)
             a_action = rec.get('action','').encode('utf8')
 
             # determine the type of action
-            action_type, action_id = self.model_id_get(cr, a_action)
+            action_type, action_id = self.model_id_get(a_action)
             action_type = action_type.split('.')[-1] # keep only type part
             values['action'] = "ir.actions.%s,%d" % (action_type, action_id)
 
@@ -540,10 +534,10 @@ form: module.record_id""" % (xml_id,)
             groups_value = []
             for group in g_names:
                 if group.startswith('-'):
-                    group_id = self.id_get(cr, group[1:])
+                    group_id = self.id_get(group[1:])
                     groups_value.append((3, group_id))
                 else:
-                    group_id = self.id_get(cr, group)
+                    group_id = self.id_get(group)
                     groups_value.append((4, group_id))
             values['groups_id'] = groups_value
 
@@ -575,11 +569,11 @@ form: module.record_id""" % (xml_id,)
         rec_string = rec.get("string",'').encode('utf8') or 'unknown'
 
         ids = None
-        eval_dict = {'ref': _ref(self, cr)}
+        eval_dict = {'ref': self.id_get}
         context = self.get_context(data_node, rec, eval_dict)
-        uid = self.get_uid(cr, self.uid, data_node, rec)
+        uid = self.get_uid(data_node, rec)
         if rec_id:
-            ids = [self.id_get(cr, rec_id)]
+            ids = [self.id_get(rec_id)]
         elif rec_src:
             q = unsafe_eval(rec_src, eval_dict)
             ids = self.pool[rec_model].search(cr, uid, q, context=context)
@@ -597,7 +591,7 @@ form: module.record_id""" % (xml_id,)
 
         assert ids is not None,\
             'You must give either an id or a search criteria'
-        ref = _ref(self, cr)
+        ref = self.id_get
         for id in ids:
             brrec =  model.browse(cr, uid, id, context)
             class d(dict):
@@ -695,10 +689,10 @@ form: module.record_id""" % (xml_id,)
                     f_val = s[0][f_use]
             elif f_ref:
                 if f_name in model._fields and model._fields[f_name].type == 'reference':
-                    val = self.model_id_get(cr, f_ref)
+                    val = self.model_id_get(f_ref)
                     f_val = val[0] + ',' + str(val[1])
                 else:
-                    f_val = self.id_get(cr, f_ref)
+                    f_val = self.id_get(f_ref)
             else:
                 f_val = _eval_xml(self,field, self.pool, cr, self.uid, self.idref)
                 if f_name in model._fields:
@@ -752,7 +746,7 @@ form: module.record_id""" % (xml_id,)
         if 'key' in el.attrib:
             record.append(Field(el.get('key'), name='key'))
         if el.get('active') in ("True", "False"):
-            view_id = self.id_get(cr, tpl_id, raise_if_not_found=False)
+            view_id = self.id_get(tpl_id, raise_if_not_found=False)
             if mode != "update" or not view_id:
                 record.append(Field(name='active', eval=el.get('active')))
         if el.get('customize_show') in ("True", "False"):
@@ -779,21 +773,16 @@ form: module.record_id""" % (xml_id,)
 
         return self._tag_record(cr, record, data_node)
 
-    def id_get(self, cr, id_str, raise_if_not_found=True):
+    def id_get(self, id_str, raise_if_not_found=True):
         if id_str in self.idref:
             return self.idref[id_str]
-        res = self.model_id_get(cr, id_str, raise_if_not_found)
-        if res and len(res)>1: res = res[1]
-        return res
+        res = self.model_id_get(id_str, raise_if_not_found)
+        return res and res[1]
 
-    def model_id_get(self, cr, id_str, raise_if_not_found=True):
-        model_data_obj = self.pool['ir.model.data']
-        mod = self.module
+    def model_id_get(self, id_str, raise_if_not_found=True):
         if '.' not in id_str:
-            id_str = '%s.%s' % (mod, id_str)
-        return model_data_obj.xmlid_to_res_model_res_id(
-            cr, self.uid, id_str,
-            raise_if_not_found=raise_if_not_found)
+            id_str = '%s.%s' % (self.module, id_str)
+        return self.env['ir.model.data'].xmlid_to_res_model_res_id(id_str, raise_if_not_found=raise_if_not_found)
 
     def parse(self, de, mode=None):
         roots = ['openerp','data','odoo']
