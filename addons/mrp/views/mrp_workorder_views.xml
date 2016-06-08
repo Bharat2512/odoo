@@ -138,7 +138,7 @@
                 <page string="Current Production">
                     <group>
                         <group>
-                            <field name="qty_producing" string="Current Qty" attrs="{'readonly': [('product_tracking', '=', 'serial')]}"/>
+                            <field name="qty_producing" string="Current Qty" attrs="{'readonly': ['|', ('product_tracking', '=', 'serial'), ('state', 'in', ('done', 'cancel'))]}"/>
                             <field name="final_lot_id" context="{'default_product_id': product_id}" attrs="{'invisible': [('product_tracking', '=', 'none')]}" groups="stock.group_production_lot"/>
                             <field name="product_tracking" invisible="1"/>
                         </group>
