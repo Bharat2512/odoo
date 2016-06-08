@@ -886,23 +886,22 @@ def convert_csv_import(cr, module, fname, csvcontent, idref=None, mode='init',
         _logger.error("Import specification does not contain 'id' and we are in init mode, Cannot continue.")
         return
 
-    uid = 1
     datas = []
     for line in reader:
         if not (line and any(line)):
             continue
         try:
             datas.append(map(misc.ustr, line))
-        except:
+        except Exception:
             _logger.error("Cannot import the line: %s", line)
 
-    registry = openerp.registry(cr.dbname)
     context = {
         'mode': mode,
         'module': module,
         'noupdate': noupdate,
     }
-    result = registry[model].load(cr, uid, fields, datas, context=context)
+    env = openerp.api.Environment(cr, SUPERUSER_ID, context)
+    result = env[model].load(fields, datas)
     if any(msg['type'] == 'error' for msg in result['messages']):
         # Report failed import and abort module install
         warning_msg = "\n".join(msg['message'] for msg in result['messages'])
