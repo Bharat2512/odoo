@@ -29,7 +29,7 @@ class Partner(models.Model):
     @api.multi
     def _compute_activities_count(self):
         activity_data = self.env['crm.activity.report'].read_group([('partner_id', 'in', self.ids)], ['partner_id'], ['partner_id'])
-        mapped_data = dict([(act['partner_id'][0], act['partner_id_count']) for act in activity_data])
+        mapped_data = {act['partner_id'][0]: act['partner_id_count'] for act in activity_data}
         for activity in self:
             activity.activities_count = mapped_data.get('partner_id_count', 0)
 
@@ -37,7 +37,7 @@ class Partner(models.Model):
     def schedule_meeting(self):
         partner_ids = self.ids
         partner_ids.append(self.env.user.partner_id.id)
-        action = self.env['ir.actions.act_window'].for_xml_id('calendar', 'action_calendar_event')
+        action = self.env.ref('calendar.action_calendar_event').read()[0]
         action['context'] = {
             'search_default_partner_ids': self._context['partner_name'],
             'default_partner_ids': partner_ids,

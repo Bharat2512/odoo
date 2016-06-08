@@ -22,13 +22,13 @@ class MergeOpportunity(models.TransientModel):
         """ Use active_ids from the context to fetch the leads/opps to merge.
             In order to get merged, these leads/opps can't be in 'Dead' or 'Closed'
         """
-        record_ids = self._context.get('active_ids', False)
+        record_ids = self._context.get('active_ids')
         result = super(MergeOpportunity, self).default_get(fields)
 
         if record_ids:
             if 'opportunity_ids' in fields:
                 opp_ids = self.env['crm.lead'].browse(record_ids).filtered(lambda opp: opp.probability < 100).ids
-                result.update({'opportunity_ids': opp_ids})
+                result['opportunity_ids'] = opp_ids
 
         return result
 
@@ -52,11 +52,8 @@ class MergeOpportunity(models.TransientModel):
         """ When changing the user, also set a team_id or restrict team id
             to the ones user_id is member of. """
         team_id = False
-        if self.user_id:
-            if self.team_id:
-                user_in_team = self.env['crm.team'].search_count([('id', '=', self.team_id.id), '|', ('user_id', '=', self.user_id.id), ('member_ids', '=', self.user_id.id)])
-            else:
-                user_in_team = False
+        if self.user_id and self.team_id:
+            user_in_team = self.env['crm.team'].search_count([('id', '=', self.team_id.id), '|', ('user_id', '=', self.user_id.id), ('member_ids', '=', self.user_id.id)])
 
             if not user_in_team:
                 team_id = self.env['crm.team'].search(['|', ('user_id', '=', self.user_id.id), ('member_ids', '=', self.user_id.id)], limit=1)
