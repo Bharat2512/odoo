@@ -16,6 +16,10 @@
     border-radius: 0;
 }
 
+.text-center {
+      margin: 16px 0 0;
+    }
+
 .clear_survey_filter, .filter-all, .filter-finished{
     cursor: pointer;
 }
