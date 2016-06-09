@@ -35,7 +35,7 @@ return Widget.extend({
         this._reposition();
         core.bus.on('scroll resize', this, function() {
             if (this.tip_opened) {
-                this._to_bubble_mode();
+                this._to_bubble_mode(true);
             }
             this._reposition();
         });
@@ -76,14 +76,21 @@ return Widget.extend({
         if (position === "bottom") return "top+" + this.info.space;
         return "bottom-" + this.info.space;
     },
-    _to_info_mode: function() {
+    _to_info_mode: function(force) {
         if (this.timerOut !== undefined) {
             clearTimeout(this.timerOut);
             this.timerOut = undefined;
             return;
         }
 
-        this.timerIn = setTimeout((function () {
+        if (force) {
+            __to_info_mode.call(this);
+        } else {
+            this.timerIn = setTimeout(__to_info_mode.bind(this), 100);
+        }
+
+        function __to_info_mode() {
+            clearTimeout(this.timerIn);
             this.timerIn = undefined;
 
             var content_width = this.$tooltip_content.outerWidth();
@@ -116,16 +123,23 @@ return Widget.extend({
                 "margin-left": mbLeft,
                 "margin-top": mbTop,
             });
-        }).bind(this), 100);
+        }
     },
-    _to_bubble_mode: function () {
+    _to_bubble_mode: function (force) {
         if (this.timerIn !== undefined) {
             clearTimeout(this.timerIn);
             this.timerIn = undefined;
             return;
         }
 
-        this.timerOut = setTimeout((function () {
+        if (force) {
+            __to_bubble_mode.call(this);
+        } else {
+            this.timerOut = setTimeout(__to_bubble_mode.bind(this), 300);
+        }
+
+        function __to_bubble_mode() {
+            clearTimeout(this.timerOut);
             this.timerOut = undefined;
 
             this.tip_opened = false;
@@ -136,7 +150,7 @@ return Widget.extend({
                 height: this.init_height,
                 margin: 0,
             });
-        }).bind(this), 300);
+        }
     },
 });
 });
