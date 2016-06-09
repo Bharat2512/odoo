@@ -17,9 +17,6 @@
     @o-bg-color-delay-in: floor(@o-anim-duration-in * 0);
     @o-arrow-duration-in: floor(@o-anim-duration-in / 2);
     @o-arrow-delay-in: floor(@o-anim-duration-in * 0);
-    @o-content-opacity-duration-in: floor(@o-anim-duration-in / 3);
-    @o-content-opacity-delay-in: floor(@o-anim-duration-in * 2 / 3);
-    @o-content-visibility-delay-in: floor(@o-anim-duration-in * 0);
     @o-arrow-white-duration-in: floor(@o-anim-duration-in * 1);
     @o-arrow-white-delay-in: floor(@o-anim-duration-in * 0);
 
@@ -32,9 +29,6 @@
     @o-bg-color-delay-out: floor(@o-anim-duration-out * 0);
     @o-arrow-duration-out: floor(@o-anim-duration-out / 2);
     @o-arrow-delay-out: floor(@o-anim-duration-out / 2);
-    @o-content-opacity-duration-out: floor(@o-anim-duration-out / 3);
-    @o-content-opacity-delay-out: floor(@o-anim-duration-out * 0);
-    @o-content-visibility-delay-out: floor(@o-anim-duration-out / 2);
 
     box-sizing: content-box;
     position: absolute;
@@ -100,9 +94,8 @@
     }
     > .o_tooltip_content {
         padding: 8px 15px;
-        opacity: 0;
         visibility: hidden;
-        transition: opacity @o-content-opacity-duration-out ease @o-content-opacity-delay-out, visibility 0s ease @o-content-visibility-delay-out;
+        transition: visibility 0s ease 0s;
         color: black;
 
         .o_skip_tour {
@@ -135,9 +128,8 @@
             display: block;
         }
         > .o_tooltip_content {
-            opacity: 1;
             visibility: visible;
-            transition: opacity @o-content-opacity-duration-in ease @o-content-opacity-delay-in, visibility 0s ease @o-content-visibility-delay-in;
+            transition: visibility 0s ease @o-anim-duration-in;
         }
 
         &.right {
