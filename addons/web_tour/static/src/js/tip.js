@@ -33,12 +33,12 @@ return Widget.extend({
         }).bind(this));
         this._bind_anchor_events();
         this._reposition();
-        core.bus.on('scroll resize', this, function() {
+        core.bus.on('scroll resize', this, _.debounce(function() {
             if (this.tip_opened) {
                 this._to_bubble_mode(true);
             }
             this._reposition();
-        });
+        }, 50));
         return this._super.apply(this, arguments);
     },
     update: function($anchor) {
