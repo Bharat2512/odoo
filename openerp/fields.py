@@ -1009,7 +1009,13 @@ class Field(object):
                 target = target.browse(env.cache[field]) - computed
 
             if target:
-                spec.append((field, target._ids))
+                if field.type in ('one2many', 'many2many') and field.domain:
+                    # The field was invalidated because of its domain. Do not
+                    # invalidate it in this case, because we may lose its values
+                    # in an onchange()!
+                    pass
+                else:
+                    spec.append((field, target._ids))
 
         return spec
 
