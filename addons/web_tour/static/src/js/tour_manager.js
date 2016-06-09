@@ -17,6 +17,7 @@ function getRunningKey() {
 
 return core.Class.extend({
     init: function(consumed_tours) {
+        this.$body = $('body');
         this.active_tooltips = {};
         this.tours = {};
         this.consumed_tours = consumed_tours;
@@ -76,6 +77,7 @@ return core.Class.extend({
         this.update();
     },
     update: function() {
+        this.in_modal = this.$body.hasClass('modal-open');
         if (this.running_tour) {
             this._check_for_tooltip(this.active_tooltips[this.running_tour], this.running_tour);
         } else {
@@ -83,7 +85,7 @@ return core.Class.extend({
         }
     },
     _check_for_tooltip: function (tip, tour_name) {
-        var $trigger = $(tip.trigger).filter(':visible').first();
+        var $trigger = $((this.in_modal ? '.modal ' : '') + tip.trigger).filter(':visible').first();
         var extra_trigger = tip.extra_trigger ? $(tip.extra_trigger).filter(':visible').length : true;
         var triggered = $trigger.length && extra_trigger;
         if (triggered) {
