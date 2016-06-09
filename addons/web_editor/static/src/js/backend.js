@@ -10,6 +10,8 @@ var editor = require('web_editor.editor');
 var summernote = require('web_editor.summernote');
 var transcoder = require('web_editor.transcoder');
 
+var form_widgets = require('web.form_widgets');
+
 var QWeb = core.qweb;
 var _t = core._t;
 
@@ -20,6 +22,7 @@ var _t = core._t;
  */
 
 var widget = common.AbstractField.extend(common.ReinitializeFieldMixin);
+
 
 var FieldTextHtmlSimple = widget.extend({
     template: 'web_editor.FieldTextHtmlSimple',
@@ -44,7 +47,6 @@ var FieldTextHtmlSimple = widget.extend({
             'lang': "odoo",
             'onChange': function (value) {
                 self.internal_set_value(value);
-                self.trigger('changed_value');
             }
         };
         if (session.debug) {
@@ -53,6 +55,7 @@ var FieldTextHtmlSimple = widget.extend({
         return config;
     },
     start: function() {
+        var self = this;
         var def = this._super.apply(this, arguments);
         this.$translate.remove();
         this.$translate = $();
@@ -97,6 +100,10 @@ var FieldTextHtmlSimple = widget.extend({
             if (this.options['style-inline']) {
                 transcoder.style_to_class(this.$content);
             }
+
+            var layoutInfo = this.$textarea.data('layoutInfo');
+            var $codable = layoutInfo.codable();
+            var $toolbar = layoutInfo.toolbar();
         }
 
         $(".oe-view-manager-content").on("scroll", function () {
@@ -168,6 +175,7 @@ var FieldTextHtmlSimple = widget.extend({
         this._super();
     }
 });
+
 
 var FieldTextHtml = widget.extend({
     template: 'web_editor.FieldTextHtml',
@@ -367,8 +375,7 @@ var FieldTextHtml = widget.extend({
             this._dirty_flag = false;
             return this.editor.save();
         } else if (this._dirty_flag && this.editor && this.editor.buildingBlock) {
-            this.editor.buildingBlock.clean_for_save();
-            this.internal_set_value( this.$content.html() );
+            this.internal_set_value( this.editor.buildingBlock.get_codesource() );
         }
     },
     destroy: function () {
