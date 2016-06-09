@@ -103,11 +103,11 @@ return core.Class.extend({
         var tour = this.tours[tour_name];
         tip.widget = new Tip(this, $anchor, {
             content: tip.content + (tour.skip_link || ''),
-            event_handlers: [{
+            event_handlers: tour.skip_handler ? [{
                 event: 'click',
                 selector: '.o_skip_tour',
                 handler: tour.skip_handler.bind(this, tip),
-            }],
+            }] : [],
             position: tip.position,
         });
         tip.widget.appendTo(document.body);
