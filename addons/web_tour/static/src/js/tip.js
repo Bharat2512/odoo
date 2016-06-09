@@ -1,6 +1,7 @@
 odoo.define('web_tour.Tip', function(require) {
 "use strict";
 
+var core = require('web.core');
 var Widget = require('web.Widget');
 
 return Widget.extend({
@@ -21,15 +22,24 @@ return Widget.extend({
                 y: 50,
             },
         });
-        this.consumed = false;
     },
     start: function() {
         this.init_width = this.$el.innerWidth();
         this.init_height = this.$el.innerHeight();
         this.$tooltip_overlay = this.$(".o_tooltip_overlay");
         this.$tooltip_content = this.$(".o_tooltip_content");
+        _.each(this.info.event_handlers, (function(data) {
+            this.$tooltip_content.on(data.event, data.selector, data.handler);
+        }).bind(this));
         this._bind_anchor_events();
         this._reposition();
+        core.bus.on('scroll resize', this, function() {
+            if (this.tip_opened) {
+                this._to_bubble_mode();
+            }
+            this._reposition();
+        });
+        return this._super.apply(this, arguments);
     },
     update: function($anchor) {
         if (!$anchor.is(this.$anchor)) {
@@ -40,14 +50,12 @@ return Widget.extend({
         this._reposition();
     },
     _reposition: function() {
-        if (this.tip_opened) {
-            return;
-        }
+        if (this.tip_opened) return;
         this.$el.position({
             my: this._get_spaced_inverted_position(this.info.position),
             at: this.info.position,
             of: this.$anchor,
-            collision: "fit",
+            collision: "none",
         });
         this.$tooltip_overlay.css({
             top: -(this.info.position === "bottom" ? this.info.space : this.info.overlay.y),
@@ -57,14 +65,10 @@ return Widget.extend({
         });
     },
     _bind_anchor_events: function () {
-        var self = this;
+        var consume_event = this.$anchor.is('input,textarea') ? 'change' : 'mousedown';
+        this.$anchor.one(consume_event, this.trigger.bind(this, 'tip_consumed'));
         this.$anchor.on('mouseenter', this._to_info_mode.bind(this));
         this.$anchor.on('mouseleave', this._to_bubble_mode.bind(this));
-        this.$anchor.on(this.$anchor.is('input,textarea') ? 'change' : 'mousedown', function () {
-            if (self.consumed) return;
-            self.consumed = true;
-            self.trigger('tip_consumed');
-        });
     },
     _get_spaced_inverted_position: function (position) {
         if (position === "right") return "left+" + this.info.space;

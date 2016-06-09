@@ -36,11 +36,17 @@ return core.Class.extend({
         var tour = {
             name: name,
             current_step: parseInt(window.localStorage.getItem(getStepKey(name))) || 0,
-            skip_enabled: options.skip_enabled,
             steps: steps,
             url: options.url,
             auto: options.auto,
         };
+        if (options.skip_enabled) {
+            tour.skip_link = '<br/><span class="o_skip_tour">' + _t('Skip these tips.') + '</span>';
+            tour.skip_handler = function (tip) {
+                this._deactivate_tip(tip);
+                this._consume_tour(name);
+            };
+        }
         this.tours[name] = tour;
         if (name === this.running_tour || (!tour.auto && !_.contains(this.consumed_tours, name))) {
             this.active_tooltips[name] = steps[tour.current_step];
@@ -92,22 +98,19 @@ return core.Class.extend({
         }
     },
     _activate_tip: function(tip, tour_name, $anchor) {
-        var skip_enabled = this.tours[tour_name].skip_enabled;
-        if (skip_enabled && !tip.extra_content) {
-            // FIXME: not pretty but a cleaner solution will be easy when we'll stop using jquery's popover
-            tip.extra_content = '<br/><span class="o_skip_tour">' + _t('Skip these tips.') + '</span>';
-        }
-        tip.widget = new Tip(this, $anchor, tip);
+        var tour = this.tours[tour_name];
+        tip.widget = new Tip(this, $anchor, {
+            content: tip.content + (tour.skip_link || ''),
+            event_handlers: [{
+                event: 'click',
+                selector: '.o_skip_tour',
+                handler: tour.skip_handler.bind(this, tip),
+            }],
+            position: tip.position,
+        });
         tip.widget.appendTo(document.body);
         tip.widget.on('tip_consumed', this, this._consume_tip.bind(this, tip, tour_name));
-        if (skip_enabled) {
-            tip.widget.on('popover_clicked', this, function (event) {
-                if (event.target.className === 'o_skip_tour') {
-                    this._deactivate_tip(tip);
-                    this._consume_tour(tour_name);
-                }
-            });
-        }
+
         if (this.running_tour === tour_name) {
             clearTimeout(this.auto_tour_timeout);
             if (tip.run) {
