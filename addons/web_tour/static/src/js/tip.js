@@ -15,12 +15,18 @@ return Widget.extend({
         this.info = _.defaults(info, {
             position: "right",
             width: 270,
+            space: 10,
+            overlay: {
+                x: 50,
+                y: 50,
+            },
         });
         this.consumed = false;
     },
     start: function() {
         this.init_width = this.$el.innerWidth();
         this.init_height = this.$el.innerHeight();
+        this.$tooltip_overlay = this.$(".o_tooltip_overlay");
         this.$tooltip_content = this.$(".o_tooltip_content");
         this._bind_anchor_events();
         this._reposition();
@@ -43,6 +49,12 @@ return Widget.extend({
             of: this.$anchor,
             collision: "fit",
         });
+        this.$tooltip_overlay.css({
+            top: -(this.info.position === "bottom" ? this.info.space : this.info.overlay.y),
+            right: -(this.info.position === "left" ? this.info.space : this.info.overlay.x),
+            bottom: -(this.info.position === "top" ? this.info.space : this.info.overlay.y),
+            left: -(this.info.position === "right" ? this.info.space : this.info.overlay.x),
+        });
     },
     _bind_anchor_events: function () {
         var self = this;
@@ -55,10 +67,10 @@ return Widget.extend({
         });
     },
     _get_spaced_inverted_position: function (position) {
-        if (position === "right") return "left+10";
-        if (position === "left") return "right-10";
-        if (position === "bottom") return "top+10";
-        return "bottom-10";
+        if (position === "right") return "left+" + this.info.space;
+        if (position === "left") return "right-" + this.info.space;
+        if (position === "bottom") return "top+" + this.info.space;
+        return "bottom-" + this.info.space;
     },
     _to_info_mode: function() {
         if (this.timerOut !== undefined) {
@@ -81,9 +93,9 @@ return Widget.extend({
             var overflow = false;
             var posVertical = (this.info.position === "top" || this.info.position === "bottom");
             if (posVertical) {
-                overflow = (offset.left + content_width > $(window).width());
+                overflow = (offset.left + content_width + this.info.overlay.x > $(window).width());
             } else {
-                overflow = (offset.top + content_height > $(window).height());
+                overflow = (offset.top + content_height + this.info.overlay.y > $(window).height());
             }
             if (posVertical && overflow || this.info.position === "left") {
                 mbLeft -= (content_width - this.init_width);
@@ -120,7 +132,7 @@ return Widget.extend({
                 height: this.init_height,
                 margin: 0,
             });
-        }).bind(this), 100);
+        }).bind(this), 300);
     },
 });
 });
