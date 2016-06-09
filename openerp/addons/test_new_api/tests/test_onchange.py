@@ -261,7 +261,6 @@ class TestOnChange(common.TransactionCase):
             'name': "[%s] %s" % ('', USER.name),
             'body': BODY,
             'author': USER.id,
-            'size': len(BODY),
             'important': False,
         })
 
@@ -285,7 +284,7 @@ class TestOnChange(common.TransactionCase):
             'participants': [(4, usr.id) for usr in discussion.participants],
             'message_changes': 0,
             'important_messages': [(4, msg.id) for msg in discussion.important_messages],
-            'important_emails': [(4, e.id, False) for e in discussion.important_emails],
+            'important_emails': [(4, eml.id) for eml in discussion.important_emails],
         }
         result = discussion.onchange(values, 'name', field_onchange)
 
