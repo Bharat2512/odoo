@@ -296,13 +296,13 @@ class YamlInterpreter(object):
             if '.' in record_id:
                 module, record_id = record_id.split('.',1)
             try:
-                self.env['ir.model.data']._get_id(module, record_id)
+                self.env['ir.model.data'].sudo()._get_id(module, record_id)
                 default = False
             except ValueError:
                 default = True
 
             if self.isnoupdate(record) and self.mode != 'init':
-                id = self.env['ir.model.data']._update_dummy(record.model, module, record_id)
+                id = self.env['ir.model.data'].sudo()._update_dummy(record.model, module, record_id)
                 # check if the resource already existed at the last update
                 if id:
                     self.id_map[record] = int(id)
@@ -319,10 +319,10 @@ class YamlInterpreter(object):
             if view_id:
                 varg = view_id
                 if view_id is True: varg = False
-                view_info = model.with_context(context).fields_view_get(varg, 'form')
+                view_info = model.with_context(context).sudo().fields_view_get(varg, 'form')
 
             record_dict = self._create_record(model, fields, view_info, default=default, context=context)
-            id = self.env(context=context)['ir.model.data']._update(record.model, \
+            id = self.env(context=context)['ir.model.data'].sudo()._update(record.model, \
                     module, record_dict, record_id, noupdate=self.isnoupdate(record), mode=self.mode)
             self.id_map[record.id] = int(id)
             if config.get('import_partial'):
@@ -374,7 +374,7 @@ class YamlInterpreter(object):
         def get_2many_view(fg, field_name, view_type):
             """ return a view of the given type for the given field's comodel """
             return fg[field_name]['views'].get(view_type) or \
-                   self.env[fg[field_name]['relation']].fields_view_get(False, view_type)
+                   self.env[fg[field_name]['relation']].sudo().fields_view_get(False, view_type)
 
         def process_vals(fg, vals):
             """ sanitize the given field values """
@@ -425,7 +425,7 @@ class YamlInterpreter(object):
         if view_info:
             fg = view_info['fields']
             elems = get_field_elems(view_info)
-            recs = model.with_context(**context)
+            recs = model.sudo().with_context(**context)
             onchange_spec = recs._onchange_spec(view_info)
             record_dict = {}
 
@@ -727,7 +727,7 @@ class YamlInterpreter(object):
 
         self._set_group_values(node, values)
 
-        pid = self.env['ir.model.data']._update('ir.ui.menu', self.module, values, node.id, \
+        pid = self.env['ir.model.data'].sudo()._update('ir.ui.menu', self.module, values, node.id, \
                 mode=self.mode, noupdate=self.isnoupdate(node), res_id=res and res[0] or False)
 
         if node.id and pid:
@@ -764,14 +764,14 @@ class YamlInterpreter(object):
 
         if node.target:
             values['target'] = node.target
-        id = self.env['ir.model.data']._update('ir.actions.act_window', self.module, values, node.id, mode=self.mode)
+        id = self.env['ir.model.data'].sudo()._update('ir.actions.act_window', self.module, values, node.id, mode=self.mode)
         self.id_map[node.id] = int(id)
 
         if node.src_model:
             keyword = 'client_action_relate'
             value = 'ir.actions.act_window,%s' % id
             replace = node.replace or True
-            self.env['ir.model.data'].ir_set('action', keyword, node.id, [node.src_model], value, \
+            self.env['ir.model.data'].sudo().ir_set('action', keyword, node.id, [node.src_model], value, \
                 replace=replace, noupdate=self.isnoupdate(node), isobject=True, xml_id=node.id)
         # TODO add remove ir.model.data
 
@@ -792,14 +792,14 @@ class YamlInterpreter(object):
 
         res = {'name': node.name, 'url': node.url, 'target': node.target}
 
-        id = self.env['ir.model.data']._update("ir.actions.act_url", self.module, res, node.id, mode=self.mode)
+        id = self.env['ir.model.data'].sudo()._update("ir.actions.act_url", self.module, res, node.id, mode=self.mode)
         self.id_map[node.id] = int(id)
         # ir_set
         if (not node.menu or eval(node.menu)) and id:
             keyword = node.keyword or 'client_action_multi'
             value = 'ir.actions.act_url,%s' % id
             replace = node.replace or True
-            self.env['ir.model.data'].ir_set('action', keyword, node.url, \
+            self.env['ir.model.data'].sudo().ir_set('action', keyword, node.url, \
                     ["ir.actions.act_url"], value, replace=replace, \
                     noupdate=self.isnoupdate(node), isobject=True, xml_id=node.id)
 
@@ -814,7 +814,7 @@ class YamlInterpreter(object):
             else:
                 value = expression
             res[fieldname] = value
-        self.env['ir.model.data'].ir_set(res['key'], res['key2'], \
+        self.env['ir.model.data'].sudo().ir_set(res['key'], res['key2'], \
                 res['name'], res['models'], res['value'], replace=res.get('replace',True), \
                 isobject=res.get('isobject', False), meta=res.get('meta',None))
 
@@ -843,7 +843,7 @@ class YamlInterpreter(object):
 
         self._set_group_values(node, values)
 
-        id = self.env['ir.model.data']._update("ir.actions.report.xml", \
+        id = self.env['ir.model.data'].sudo()._update("ir.actions.report.xml", \
                 self.module, values, xml_id, noupdate=self.isnoupdate(node), mode=self.mode)
         self.id_map[xml_id] = int(id)
 
@@ -851,7 +851,7 @@ class YamlInterpreter(object):
             keyword = node.keyword or 'client_print_multi'
             value = 'ir.actions.report.xml,%s' % id
             replace = node.replace or True
-            self.env['ir.model.data'].ir_set('action', \
+            self.env['ir.model.data'].sudo().ir_set('action', \
                     keyword, values['name'], [values['model']], value, replace=replace, isobject=True, xml_id=xml_id)
 
     def process_none(self):
