@@ -1,27 +1,27 @@
 # -*- coding: utf-8 -*-
+# Part of Odoo. See LICENSE file for full copyright and licensing details.
+
 from collections import OrderedDict
 from datetime import datetime, timedelta
 import logging
+import re
 import time # used to eval time.strftime expressions
 import types
 
-import openerp
-import openerp.sql_db as sql_db
-import openerp.workflow
-import misc
-from config import config
-import yaml_tag
-import yaml
-import re
 from lxml import etree
+import yaml
+
+import openerp
+from . import assertion_report
+from . import yaml_tag
+from .config import config
+from .misc import file_open, DEFAULT_SERVER_DATE_FORMAT, DEFAULT_SERVER_DATETIME_FORMAT
 from openerp import SUPERUSER_ID
 
 # YAML import needs both safe and unsafe eval, but let's
 # default to /safe/.
 unsafe_eval = eval
-from safe_eval import safe_eval as eval
-
-import assertion_report
+from .safe_eval import safe_eval as eval
 
 _logger = logging.getLogger(__name__)
 
@@ -557,11 +557,11 @@ class YamlInterpreter(object):
             value = [(6, 0, ids)]
         elif field.type == "date" and is_string(expression):
             # enforce ISO format for string date values, to be locale-agnostic during tests
-            time.strptime(expression, misc.DEFAULT_SERVER_DATE_FORMAT)
+            time.strptime(expression, DEFAULT_SERVER_DATE_FORMAT)
             value = expression
         elif field.type == "datetime" and is_string(expression):
             # enforce ISO format for string datetime values, to be locale-agnostic during tests
-            time.strptime(expression, misc.DEFAULT_SERVER_DATETIME_FORMAT)
+            time.strptime(expression, DEFAULT_SERVER_DATETIME_FORMAT)
             value = expression
         elif field.type == "reference":
             record = self.get_record(expression)
@@ -644,7 +644,8 @@ class YamlInterpreter(object):
         signals=[x['signal'] for x in self.cr.dictfetchall()]
         if workflow.action not in signals:
             raise YamlImportException('Incorrect action %s. No such action defined' % workflow.action)
-        openerp.workflow.trg_validate(uid, workflow.model, id, workflow.action, self.cr)
+        record = self.env(user=uid)[workflow.model].browse(id)
+        record.signal_workflow(workflow.action)
 
     def _eval_params(self, model, params):
         args = []
@@ -829,7 +830,7 @@ class YamlInterpreter(object):
         if node.auto:
             values['auto'] = eval(node.auto)
         if node.sxw:
-            sxw_file = misc.file_open(node.sxw)
+            sxw_file = file_open(node.sxw)
             try:
                 sxw_content = sxw_file.read()
                 values['report_sxw_content'] = sxw_content
