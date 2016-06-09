@@ -127,7 +127,7 @@ def _eval_xml(self, node, env):
                     'Could not eval(%s) for %s in %s', a_eval, node.get('name'), env.context)
                 raise
         def _process(s):
-            matches = re.finditer('[^%]%\((.*?)\)[ds]', s)
+            matches = re.finditer(r'[^%]%\((.*?)\)[ds]', s)
             done = []
             for m in matches:
                 found = m.group()[1:]
