@@ -194,14 +194,10 @@ def _eval_xml(self, node, env):
             return_val = _eval_xml(self, n, env)
             if return_val is not None:
                 args.append(return_val)
-        model = env[node.get('model', '')]
+        model = env[node.get('model', '')]._model
         method = node.get('name')
-        api = getattr(getattr(model, method).im_func, '_api', None)
-        if api in (openerp.api.multi, openerp.api.cr_uid_ids, openerp.api.cr_uid_ids_context):
-            records = model.browse(args[0])
-            res = getattr(records, method)(*args[1:])
-        else:
-            res = getattr(model, method)(*args)
+        # this one still depends on the old API
+        res = getattr(model, method)(env.cr, env.uid, *args)
         return res
     elif node.tag == "test":
         return node.text

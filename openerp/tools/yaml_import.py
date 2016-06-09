@@ -676,18 +676,14 @@ class YamlInterpreter(object):
         function, params = node.items()[0]
         if self.isnoupdate(function) and self.mode != 'init':
             return
-        model = self.env[function.model]
+        model = self.env[function.model]._model
         if function.eval:
             args = self.process_eval(function.eval)
         else:
             args = self._eval_params(function.model, params)
         method = function.name
-        api = getattr(getattr(model, method).im_func, '_api', None)
-        if api in (openerp.api.multi, openerp.api.cr_uid_ids, openerp.api.cr_uid_ids_context):
-            records = model.browse(args[0])
-            getattr(records, method)(*args[1:])
-        else:
-            getattr(model, method)(*args)
+        # this one still depends on the old API
+        getattr(model, method)(self.cr, self.uid, *args)
 
     def _set_group_values(self, node, values):
         if node.groups:
