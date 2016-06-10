@@ -141,7 +141,7 @@
                         </div>
                         <notebook>
                             <page string="Design Survey">
-                                <field name="design_html" nolabel="1" widget="html_frame" options="{'editor_url':'/survey/field/survey_template'}"/>
+                                <field name="design_html" nolabel="1" widget="html_frame" options="{}"/>
                             </page>
                             <page string="Edit Pages and Questions">
                                 <field name="page_ids" mode="tree" context="{'default_survey_id': active_id}" nolabel="1">
