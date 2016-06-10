@@ -15,7 +15,7 @@ tour.register('account_accountant_tour', {
 }, {
     trigger: ".o_invoice_new",
     extra_trigger: '.o_account_kanban',
-    content:  _t("Let\'s create a customer invoice."),
+    content:  _t("Let\'s start with a customer invoice."),
     position: "bottom"
 }, {
     trigger: ".breadcrumb li:not(.active):last",

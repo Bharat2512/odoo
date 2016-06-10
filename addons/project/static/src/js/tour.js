@@ -18,7 +18,7 @@ tour.register('project_tour', {
     position: 'right',
 }, {
     trigger: '.o_project_kanban .o_kanban_record:first-child',
-    content: _t('Click to <b>open your project</b>.'),
+    content: _t('Let\'s <b>go to your project</b> and start organizing tasks.'),
     position: 'right',
 }, {
     trigger: ".o_kanban_project_tasks .o_column_quick_create",
@@ -26,7 +26,7 @@ tour.register('project_tour', {
     position: "right"
 }, {
     trigger: ".o-kanban-button-new",
-    extra_trigger: '.o_kanban_project_tasks .o_kanban_group',
+    extra_trigger: '.o_kanban_project_tasks .o_kanban_group:nth-child(2)',
     content: _t("Now that the project is set up, <b>create a few tasks</b>."),
     position: "right"
 }, {
