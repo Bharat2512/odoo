@@ -9,7 +9,7 @@
                     <div class="row">   
                         <div class="col-xs-4">
                             <h2>Bulletin de paie</h2>
-                            <h4>Paie du <span t-esc="formatLang(o.date_from, date=True)"/> au <span t-esc="formatLang(o.date_to, date=True)"/></h4>
+                            <h4>Paie du <span t-esc="data['date_from']"/> au <span t-esc="data['date_to']"/></h4>
                         </div>
                         <div class="col-xs-4 pull-right">
                             <table class="table table-bordered" stype="border: 2px solid black;">
