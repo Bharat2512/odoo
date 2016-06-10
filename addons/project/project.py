@@ -172,9 +172,9 @@ class project(osv.osv):
             self.pool.get('ir.actions.act_window').write(cr, 1, [act_id], {
                 "help": _('''<p class="oe_view_nocontent_create">Click to create a new project.</p>''')
             }, context=context)
-        # TODO: Would be better to send a signal to reload the screen
-        # return {'type': 'ir.actions.act_window_reload'}
-        return True
+        # send an action to reload the screen
+        action_id = data_obj.xmlid_to_res_id(cr, uid, 'project.open_view_project_all')
+        return self.pool.get('ir.actions.act_window').read(cr, 1, [action_id])[0]
 
     def _get_favorite(self, cr, uid, ids, name, args, context=None):
         return dict((project.id, uid in project.favorite_user_ids.ids) for project in self.browse(cr, uid, ids, context=context))
