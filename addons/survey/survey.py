@@ -180,7 +180,6 @@ class survey_survey(osv.Model):
             string="Results link", type="char"),
         'email_template_id': fields.many2one('mail.template',
             'Email Template', ondelete='set null'),
-        'design_html': fields.html('Survey Design', translate=True),
         'thank_you_message': fields.html('Thank you message', translate=True,
             help="This message will be displayed when survey is completed"),
         'quizz_mode': fields.boolean(string='Quiz mode'),
