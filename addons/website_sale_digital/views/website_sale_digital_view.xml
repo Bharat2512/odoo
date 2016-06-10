@@ -25,4 +25,17 @@
             </div>
         </field>
     </record>
+
+    <record id="product_product_view_form_easy_inherit_digital" model="ir.ui.view">
+        <field name="name">product.product.view.form.easy.inherit.digital</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_variant_easy_edit_view"/>
+        <field name="arch" type="xml">
+             <div name="button_box" position="inside">
+                <button class="oe_stat_button" name="action_open_attachments" type="object" icon="fa-file">
+                    <field string="File" name="attachment_count" widget="statinfo" />
+                </button>
+            </div>
+        </field>
+    </record>
 </odoo>
