@@ -116,7 +116,7 @@
                     <field name="tot_start_survey" invisible="1"/>
                     <field name="is_closed" invisible="1"/>
                     <header groups="base.group_survey_manager">
-                        <button name="action_test_survey" string="Start Survey" type="object" attrs="{'invisible': [('id', '=', False)]}"/>
+                        <button name="action_test_survey" string="Test Survey" type="object" attrs="{'invisible': [('id', '=', False)]}"/>
                         <button name="action_print_survey" string="Print Survey" type="object" attrs="{'invisible': [('id', '=', False)]}"/>
                         <button name="action_send_survey" string="Share and invite by email" type="object" class="oe_highlight"  attrs="{'invisible': [('id', '=', False)]}"/>
                         <button name="action_result_survey" string="View results" type="object" attrs="{'invisible': ['|',('id', '=', False), ('tot_start_survey', '!=', 0)]}"/>
@@ -210,7 +210,7 @@
                                 <h4 class="oe_center"><field name="title" /></h4>
                                 <div><ul>
                                     <li>
-                                        <t t-if="record.designed.raw_value"><a type="object" name="action_test_survey">Start</a></t>
+                                        <t t-if="record.designed.raw_value"><a type="object" name="action_test_survey">Test</a></t>
                                         <t t-if="! record.designed.raw_value"><a style="color: #aaaaaa;">Test</a></t>
                                     </li>
                                     <li>
