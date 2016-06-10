@@ -281,7 +281,67 @@
                 </data>
             </field>
         </record>
-        
+
+        <record model="ir.ui.view" id="product_form_view_easy_procurement_button">
+            <field name="name">product.product.easy.procurement</field>
+            <field name="model">product.product</field>
+            <field name="inherit_id" ref="product.product_variant_easy_edit_view"/>
+            <field name="arch" type="xml">
+                <data>
+                    <div name="button_box" position="inside">
+                        <button class="oe_stat_button"
+                               name="%(product_open_quants)d"
+                               icon="fa-building-o"
+                               type="action" attrs="{'invisible':[('type', '!=', 'product')]}">
+                            <field name="qty_available" widget="statinfo" string="On Hand"/>
+                        </button>
+                        <button type="action"
+                            name="%(stock.action_stock_level_forecast_report_product)d"
+                            attrs="{'invisible':[('type', '!=', 'product')]}"
+                            class="oe_stat_button" icon="fa-building-o">
+                            <div class="o_form_field o_stat_info">
+                                <span class="o_stat_value"><field name="virtual_available" widget="statinfo" nolabel="1"/>
+                                    <span attrs="{'invisible':[('outgoing_qty', '=', 0),('incoming_qty','=',0)]}">
+                                        (-<field name="outgoing_qty" widget="statinfo" nolabel="1"/>
+                                        +<field name="incoming_qty" widget="statinfo" nolabel="1"/>)
+                                    </span>
+                                </span>
+                                <span class="o_stat_text">Forecasted</span>
+                            </div>
+                        </button>
+                       <button string="Traceability"
+                            type="action"
+                            name= "%(act_product_stock_move_open)d"
+                            attrs="{'invisible':[('type', 'not in', ['product', 'consu'])]}"
+                            class="oe_stat_button" icon="fa-arrows-v"
+                            groups="stock.group_stock_user"/>
+                       <button type="action"
+                            name="%(product_open_orderpoint)d"
+                            attrs="{'invisible':['|',('type', '!=', 'product'),('nbr_reordering_rules', '==', 1)]}"
+                            class="oe_stat_button" icon="fa-refresh">
+                            <field name="nbr_reordering_rules" widget="statinfo"/>
+                        </button>
+                        <button name="%(product_open_orderpoint)d" type="action"
+                            attrs="{'invisible':['|',('type', '!=', ['product', 'consu']),('nbr_reordering_rules', '!=', 1)]}"
+                            class="oe_stat_button" icon="fa-refresh">
+                            <div class="o_form_field o_stat_info mr4">
+                                <span class="o_stat_text">Min :</span>
+                                <span class="o_stat_text">Max:</span>
+                            </div>
+                            <div class="o_form_field o_stat_info">
+                                <span class="o_stat_value"><field name="reordering_min_qty"/></span>
+                                <span class="o_stat_value"><field name="reordering_max_qty"/></span>
+                            </div>
+                        </button>
+                       <button string="Routes" type="object"
+                            name="action_view_routes"
+                            attrs="{'invisible':[('type', '!=', 'product')]}"
+                            class="oe_stat_button" icon="fa-cogs" groups="stock.group_adv_location"/>
+                    </div>
+                </data>
+            </field>
+        </record>
+
         <record model="ir.ui.view" id="product_template_form_view_procurement_button">
             <field name="name">product.template_procurement</field>
             <field name="model">product.template</field>

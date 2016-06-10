@@ -1086,6 +1086,24 @@
                 </div>
             </field>
         </record>
+        <record id="product_product_form_view_easy_bom_button" model="ir.ui.view">
+            <field name="name">product.product.easy.procurement</field>
+            <field name="model">product.product</field>
+            <field name="inherit_id" ref="product.product_variant_easy_edit_view"/>
+            <field name="groups_id" eval="[(4, ref('mrp.group_mrp_user'))]"/>
+            <field name="arch" type="xml">
+                <div name="button_box" position="inside">
+                    <button class="oe_stat_button" name="action_view_bom" type="object"
+                        attrs="{'invisible':[('type', 'not in', ['product', 'consu'])]}" icon="fa-flask">
+                        <field string="Bill of Materials" name="bom_count" widget="statinfo" />
+                    </button>
+                    <button class="oe_stat_button" name="%(act_product_mrp_production)d" type="action"
+                        attrs="{'invisible':[('type', 'not in', ['product', 'consu'])]}" icon="fa-list-alt">
+                        <field string="Manufacturing" name="mo_count" widget="statinfo" />
+                    </button>
+                </div>
+            </field>
+        </record>
 
         <!-- Warehouse -->
         <record id="view_warehouse_inherited" model="ir.ui.view">
